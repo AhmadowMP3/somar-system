@@ -2,7 +2,7 @@
 
 Resume rule: on a new session read this file and continue from the first unchecked gate.
 
-- [ ] Gate 1 — Local review (`npm run review`, `npm run tour`, docs/REVIEW-TOUR.md) — tooling done 2026-09-25 23:26 UTC; waiting for the owner's «شفتو»
+- [x] Gate 1 — Local review — approved by the owner, no changes requested (2026-09-25 23:36 UTC)
 - [ ] Gate 2 — Domains
 - [ ] Gate 3 — Supabase keys and database connection
 - [ ] Gate 4 — GoTrue configuration
