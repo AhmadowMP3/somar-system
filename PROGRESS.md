@@ -3,7 +3,7 @@
 Resume rule: on a new session read this file and continue from the first unchecked gate.
 
 - [x] Gate 1 — Local review — approved by the owner, no changes requested (2026-09-25 23:36 UTC)
-- [ ] Gate 2 — Domains
+- [x] Gate 2 — Domains — both valid Let's Encrypt certs, Supabase gateway answers 401 without key (expected) (2026-09-25 23:56 UTC)
 - [ ] Gate 3 — Supabase keys and database connection
 - [ ] Gate 4 — GoTrue configuration
 - [ ] Gate 5 — Database schema
@@ -22,3 +22,5 @@ Resume rule: on a new session read this file and continue from the first uncheck
 | Item | Value |
 |---|---|
 | Local review URL | http://localhost:8787 (8080 is used by Steam) |
+| Supabase API domain | https://somar-supa.ahmad-zaven.io |
+| App domain | https://somar.ahmad-zaven.io |
