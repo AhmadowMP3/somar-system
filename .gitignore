@@ -1,0 +1,14 @@
+node_modules/
+dist/
+dev-dist/
+.env
+.env.*
+!.env.example
+coverage/
+playwright-report/
+test-results/
+*.log
+.DS_Store
+supabase/.branches
+supabase/.temp
+tests/e2e/.auth/

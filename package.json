@@ -1,0 +1,50 @@
+{
+  "name": "somar-transport",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "workspaces": [
+    "packages/shared",
+    "apps/api",
+    "apps/web"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "dev": "npm run build -w @somar/shared && concurrently -n api,web \"npm run dev -w @somar/api\" \"npm run dev -w @somar/web\"",
+    "build": "npm run build -w @somar/shared && npm run build -w @somar/web && npm run build -w @somar/api",
+    "start": "node apps/api/dist/main.js",
+    "lint": "eslint . --max-warnings 0",
+    "typecheck": "npm run build -w @somar/shared && tsc -p apps/api --noEmit && tsc -p apps/web --noEmit && tsc -p tsconfig.tools.json --noEmit",
+    "test:unit": "vitest run --project unit",
+    "test:int": "vitest run --project integration",
+    "test:e2e": "playwright test",
+    "verify": "npm run lint && npm run typecheck && npm run test:unit && npm run test:int && npm run build",
+    "seed:demo": "tsx supabase/seed/seed-demo.ts",
+    "seed:import-file": "tsx supabase/seed/generate-import.ts",
+    "bootstrap:admin": "tsx scripts/bootstrap-admin.ts",
+    "generate:vapid": "tsx scripts/generate-vapid.ts",
+    "db:push": "supabase db push",
+    "db:apply": "node scripts/apply-migrations.mjs",
+    "supabase:start": "supabase start -x studio,realtime,edge-runtime,logflare,vector,mailpit,imgproxy,postgres-meta,supavisor"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.20.0",
+    "@playwright/test": "^1.50.1",
+    "@types/node": "^22.13.1",
+    "@types/pg": "^8.11.11",
+    "concurrently": "^9.1.2",
+    "eslint": "^9.20.0",
+    "eslint-plugin-react-hooks": "^5.1.0",
+    "eslint-plugin-react-refresh": "^0.4.18",
+    "globals": "^15.14.0",
+    "pg": "^8.13.3",
+    "supabase": "^2.118.0",
+    "tsx": "^4.19.2",
+    "typescript": "~5.7.3",
+    "typescript-eslint": "^8.24.0",
+    "vitest": "^3.2.4",
+    "dotenv": "^16.4.7"
+  }
+}

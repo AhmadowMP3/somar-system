@@ -1,0 +1,91 @@
+import { z } from 'zod';
+
+export type ScanDirection = 'outbound' | 'return';
+export type ScanMethod = 'qr' | 'manual';
+
+export type ScanSuccess = {
+  ok: true;
+  scan_id: string;
+  direction: ScanDirection;
+  method: ScanMethod;
+  scanned_at: string;
+  student: {
+    id: string;
+    full_name: string;
+    transport_number: string;
+    college: string | null;
+    photo_path: string | null;
+    photo_url: string | null;
+  };
+  quota: number;
+  used: number;
+  remaining_after: number;
+  subscription_ends_on: string;
+  offday_override: boolean;
+  warning: 'LOW_BALANCE' | null;
+};
+
+export type ScanFailure = {
+  ok: false;
+  code: string;
+  message_ar: string;
+  minutes_remaining?: number;
+};
+
+export type ScanResult = ScanSuccess | ScanFailure;
+
+export const scanRequestSchema = z.object({
+  qr_token: z.string().uuid().nullish(),
+  transport_number: z.string().trim().min(1).max(40).nullish(),
+  lat: z.number().min(-90).max(90).nullish(),
+  lng: z.number().min(-180).max(180).nullish(),
+  accuracy: z.number().min(0).nullish(),
+  geo_denied: z.boolean().optional().default(false),
+  override_reason: z.string().trim().max(500).nullish(),
+});
+export type ScanRequest = z.infer<typeof scanRequestSchema>;
+
+export const studentInputSchema = z.object({
+  university_id: z.string().uuid(),
+  college_id: z.string().uuid(),
+  full_name: z.string().trim().min(1).max(200),
+  university_student_no: z.string().trim().min(1).max(40),
+  phone: z.string().trim().min(1).max(40),
+  residence_text: z.string().trim().max(300).nullish(),
+  area_primary_id: z.string().uuid().nullish(),
+  area_secondary_id: z.string().uuid().nullish(),
+  area_other_text: z.string().trim().max(300).nullish(),
+  work_days: z.array(z.number().int().min(1).max(7)).min(1),
+  shift_start: z.enum(['08:00', '10:00', '12:00', '14:00']),
+});
+export type StudentInput = z.infer<typeof studentInputSchema>;
+
+export const staffInputSchema = z.object({
+  login_code: z
+    .string()
+    .trim()
+    .min(2)
+    .max(40)
+    .regex(/^[A-Za-z0-9._-]+$/),
+  full_name: z.string().trim().min(2).max(200),
+  phone: z.string().trim().max(40).nullish(),
+  university_id: z.string().uuid(),
+  password: z.string().min(6).max(128),
+  role: z.enum(['supervisor', 'university_supervisor']).default('supervisor'),
+});
+export type StaffInput = z.infer<typeof staffInputSchema>;
+
+export const broadcastSchema = z.object({
+  university_id: z.string().uuid(),
+  title: z.string().trim().min(1).max(120),
+  body: z.string().trim().min(1).max(1000),
+  audience: z.discriminatedUnion('kind', [
+    z.object({ kind: z.literal('university') }),
+    z.object({ kind: z.literal('college'), college_id: z.string().uuid() }),
+    z.object({ kind: z.literal('package'), package_id: z.string().uuid() }),
+    z.object({ kind: z.literal('student'), student_id: z.string().uuid() }),
+  ]),
+});
+export type BroadcastInput = z.infer<typeof broadcastSchema>;
+
+export type ApiError = { ok: false; code: string; message_ar: string; details?: unknown };
