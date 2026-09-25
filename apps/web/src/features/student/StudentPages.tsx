@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { BellRing, CalendarClock, ChevronLeft, KeyRound, LogOut, MapPinned, Navigation, Package as PackageIcon } from 'lucide-react';
+import { BellRing, CalendarClock, ChevronLeft, KeyRound, LogOut, MapPinned, Navigation, Package as PackageIcon, ScanLine } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { formatClock, formatDate, formatDateTime, formatPhoneDisplay, formatTime } from '@somar/shared';
@@ -70,11 +70,20 @@ function HomeSkeleton() {
 
 export function StudentHome() {
   const query = useDashboard();
+  const { canScan } = useAuth();
   const [qrOpen, setQrOpen] = useState(false);
   return (
     <QueryState query={query} skeleton={<HomeSkeleton />}>
       {(d) => (
         <div className="space-y-4">
+          {canScan ? (
+            <Button asChild variant="primary" size="lg" className="h-16 w-full text-lg">
+              <Link to="/scan">
+                <ScanLine className="h-6 w-6" aria-hidden />
+                {t.nav.scan}
+              </Link>
+            </Button>
+          ) : null}
           <Card className="flex flex-col items-center gap-3 text-center">
             <p className="text-sm text-muted">{t.student.transportNumber}</p>
             <p className="num font-mono text-3xl font-extrabold tracking-wider text-brand-ink" data-testid="transport-number">

@@ -11,6 +11,9 @@ import { api, ApiClientError } from '@/lib/api';
 import { errorMessage } from '@/lib/errors';
 import { supabase } from '@/lib/supabase';
 
+/** One-shot message shown on the login screen after a forced sign-out (survives the auth redirect). */
+const pendingNotice: { value: string | null } = { value: null };
+
 function AuthShell({ title, subtitle, children }: { title: string; subtitle?: string; children: React.ReactNode }) {
   return (
     <main className="flex min-h-dvh items-center justify-center bg-surface px-4 py-8">
@@ -64,7 +67,12 @@ export function LoginPage() {
   const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const notice = (location.state as { notice?: string } | null)?.notice;
+  const [notice] = useState<string | null>(
+    () => pendingNotice.value ?? (location.state as { notice?: string } | null)?.notice ?? null,
+  );
+  useEffect(() => {
+    pendingNotice.value = null;
+  }, []);
   const codeId = useId();
   const pwId = useId();
 
@@ -142,8 +150,9 @@ export function ChangePasswordPage() {
     mutationFn: () =>
       api.post('/me/password', { password, confirm, current_password: forced ? undefined : current }),
     onSuccess: async () => {
+      pendingNotice.value = t.auth.changed;
       await signOut();
-      navigate('/login', { replace: true, state: { notice: t.auth.changed } });
+      navigate('/login', { replace: true });
     },
   });
 
