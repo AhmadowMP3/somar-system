@@ -27,7 +27,10 @@
     "generate:vapid": "tsx scripts/generate-vapid.ts",
     "db:push": "supabase db push",
     "db:apply": "node scripts/apply-migrations.mjs",
-    "supabase:start": "supabase start -x studio,realtime,edge-runtime,logflare,vector,mailpit,imgproxy,postgres-meta,supavisor"
+    "supabase:start": "supabase start -x studio,realtime,edge-runtime,logflare,vector,mailpit,imgproxy,postgres-meta,supavisor",
+    "review": "tsx scripts/review.ts",
+    "review:stop": "tsx scripts/review.ts --stop",
+    "tour": "tsx scripts/tour.ts"
   },
   "devDependencies": {
     "@eslint/js": "^9.20.0",

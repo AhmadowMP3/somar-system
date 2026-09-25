@@ -300,7 +300,7 @@ function CameraView({ paused, onDecode, onClose }: { paused: boolean; onDecode: 
   }, [deviceIndex, devices]);
 
   return (
-    <div className="fixed inset-0 z-40 flex flex-col bg-black" role="dialog" aria-modal="true" aria-label={t.scan.title}>
+    <div className="fixed inset-0 z-[60] flex flex-col bg-black" role="dialog" aria-modal="true" aria-label={t.scan.title}>
       <div className="flex items-center justify-between p-3 text-white">
         <Button variant="ghost" size="icon" className="text-white hover:bg-white/10" aria-label={t.scan.stop} onClick={onClose}>
           <X className="h-7 w-7" />
@@ -362,7 +362,7 @@ function ResultPopup({
   }, [result]);
   const ok = result?.ok === true;
   return (
-    <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/60 p-3 sm:items-center" role="dialog" aria-modal="true">
+    <div className="fixed inset-0 z-[70] flex items-end justify-center bg-black/60 p-3 sm:items-center" role="dialog" aria-modal="true">
       <div
         className={cn(
           'relative w-full max-w-md rounded-2xl bg-bg p-5 text-center shadow-2xl',
@@ -406,8 +406,8 @@ function ResultPopup({
             <p className="text-2xl font-extrabold" data-testid="scan-name">
               {result.student.full_name}
             </p>
-            <p className="num font-mono text-sm text-muted">
-              {result.student.transport_number} · {result.student.college}
+            <p className="text-sm text-muted">
+              <span className="num font-mono">{result.student.transport_number}</span> · {result.student.college}
             </p>
             <div className="flex items-center justify-center gap-3">
               <span data-testid="scan-direction">

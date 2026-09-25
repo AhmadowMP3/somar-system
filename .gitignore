@@ -12,3 +12,8 @@ test-results/
 supabase/.branches
 supabase/.temp
 tests/e2e/.auth/
+.review.json
+.env.production
+import-preview.xlsx
+import-result.xlsx
+doctor-report.json

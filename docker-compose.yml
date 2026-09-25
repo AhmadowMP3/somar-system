@@ -1,5 +1,6 @@
 # Local development only: a minimal Supabase-compatible stack + the app, no Supabase CLI needed.
 #   docker compose up --build        → app on http://localhost:8080, Supabase gateway on http://localhost:8000
+#   (ports are overridable with REVIEW_APP_PORT / REVIEW_KONG_PORT / REVIEW_DB_PORT; `npm run review` picks free ones)
 # Keys below are the public Supabase *demo* keys (JWT secret below). Never use them in production.
 x-jwt: &jwt
   JWT_SECRET: super-secret-jwt-token-with-at-least-32-characters-long
@@ -16,7 +17,7 @@ services:
     volumes:
       - ./supabase/docker/roles.sql:/docker-entrypoint-initdb.d/init-scripts/99-roles.sql:ro
       - db-data:/var/lib/postgresql/data
-    ports: ['54322:5432']
+    ports: ['${REVIEW_DB_PORT:-54322}:5432']
     healthcheck:
       test: ['CMD', 'pg_isready', '-U', 'postgres', '-h', 'localhost']
       interval: 5s
@@ -28,10 +29,10 @@ services:
     environment:
       GOTRUE_API_HOST: 0.0.0.0
       GOTRUE_API_PORT: 9999
-      API_EXTERNAL_URL: http://localhost:8000
+      API_EXTERNAL_URL: http://localhost:${REVIEW_KONG_PORT:-8000}
       GOTRUE_DB_DRIVER: postgres
       GOTRUE_DB_DATABASE_URL: postgres://supabase_auth_admin:postgres@db:5432/postgres
-      GOTRUE_SITE_URL: http://localhost:8080
+      GOTRUE_SITE_URL: http://localhost:${REVIEW_APP_PORT:-8080}
       GOTRUE_DISABLE_SIGNUP: 'true'
       GOTRUE_EXTERNAL_EMAIL_ENABLED: 'true'
       GOTRUE_MAILER_AUTOCONFIRM: 'true'
@@ -84,7 +85,7 @@ services:
       KONG_NGINX_PROXY_PROXY_BUFFER_SIZE: 160k
       KONG_NGINX_PROXY_PROXY_BUFFERS: 64 160k
     volumes: [./supabase/docker/kong.yml:/home/kong/kong.yml:ro]
-    ports: ['8000:8000']
+    ports: ['${REVIEW_KONG_PORT:-8000}:8000']
     restart: unless-stopped
 
   migrate:
@@ -101,21 +102,21 @@ services:
     build:
       context: .
       args:
-        VITE_SUPABASE_URL: http://localhost:8000
+        VITE_SUPABASE_URL: http://localhost:${REVIEW_KONG_PORT:-8000}
         VITE_SUPABASE_ANON_KEY: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS1kZW1vIiwicm9sZSI6ImFub24iLCJleHAiOjE5ODM4MTI5OTZ9.CRXP1A7WOeoJeXxjNni43kdQwgnWNReilDMblYTn_I0
     depends_on: { migrate: { condition: service_completed_successfully } }
     environment:
       PORT: 8080
-      APP_BASE_URL: http://localhost:8080
+      APP_BASE_URL: http://localhost:${REVIEW_APP_PORT:-8080}
       SUPABASE_URL: http://kong:8000
       SUPABASE_ANON_KEY: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS1kZW1vIiwicm9sZSI6ImFub24iLCJleHAiOjE5ODM4MTI5OTZ9.CRXP1A7WOeoJeXxjNni43kdQwgnWNReilDMblYTn_I0
       SUPABASE_SERVICE_ROLE_KEY: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS1kZW1vIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImV4cCI6MTk4MzgxMjk5Nn0.EGIM96RAZx35lJzdJsyH-qQwv8Hdp7fsn3W0YpN81IU
-      VITE_SUPABASE_URL: http://localhost:8000
+      VITE_SUPABASE_URL: http://localhost:${REVIEW_KONG_PORT:-8000}
       VITE_SUPABASE_ANON_KEY: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS1kZW1vIiwicm9sZSI6ImFub24iLCJleHAiOjE5ODM4MTI5OTZ9.CRXP1A7WOeoJeXxjNni43kdQwgnWNReilDMblYTn_I0
       SUPABASE_STUDENT_EMAIL_DOMAIN: somar.local
       BOOTSTRAP_ADMIN_CODE: ADMIN
       BOOTSTRAP_ADMIN_PASSWORD: Admin@12345
-    ports: ['8080:8080']
+    ports: ['${REVIEW_APP_PORT:-8080}:8080']
 
 volumes:
   db-data:
