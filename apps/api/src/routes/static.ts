@@ -1,7 +1,7 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import fastifyStatic from '@fastify/static';
-import type { FastifyInstance } from 'fastify';
+import type { FastifyInstance, FastifyReply } from 'fastify';
 import { arShared } from '@somar/shared';
 import { publicRuntimeConfig, type Config } from '../config.js';
 
@@ -24,6 +24,7 @@ export async function staticRoutes(app: FastifyInstance, cfg: Config) {
       root,
       wildcard: true,
       index: false,
+      cacheControl: false,
       allowedPath: (pathName) => pathName !== '/index.html',
       setHeaders(res, filePath) {
         const normalized = filePath.replace(/\\/g, '/');
@@ -36,7 +37,7 @@ export async function staticRoutes(app: FastifyInstance, cfg: Config) {
     app.log.warn(`SPA build not found at ${root}; only /api routes are served`);
   }
 
-  const sendIndex = (reply: import('fastify').FastifyReply) =>
+  const sendIndex = (reply: FastifyReply) =>
     reply.header('Cache-Control', NO_STORE).type('text/html; charset=utf-8').send(indexHtml);
 
   app.get('/', (_request, reply) => (hasSpa ? sendIndex(reply) : reply.code(404).send()));

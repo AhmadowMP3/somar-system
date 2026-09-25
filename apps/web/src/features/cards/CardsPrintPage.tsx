@@ -120,7 +120,7 @@ function TransportCard({ card }: { card: CardData }) {
         </div>
         <div className="flex flex-1 gap-[2.5mm]">
           <div className="h-[22mm] w-[18mm] shrink-0 overflow-hidden rounded-[1.5mm] bg-surface">
-            {card.photo ? <img src={card.photo} alt="" className="h-full w-full object-cover" /> : null}
+            {card.photo ? <img src={card.photo} alt="" className="h-full w-full object-cover" data-testid="card-photo" /> : null}
           </div>
           <div className="min-w-0 flex-1 leading-tight">
             <p className="text-[3.2mm] font-extrabold">{card.full_name}</p>

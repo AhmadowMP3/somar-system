@@ -1,6 +1,7 @@
 /** Unicode "format" (Cf) characters: RLM, LRM, ZWJ, PDF, BOM, etc. */
 const CF_REGEX = /\p{Cf}/gu;
-const WS_REGEX = /[\s   ]+/g;
+/** JS `\s` already covers NBSP (U+00A0), figure space (U+2007) and narrow NBSP (U+202F). */
+const WS_REGEX = /\s+/g;
 const TATWEEL = /ـ/g;
 const HARAKAT = /[ً-ْٰ]/g;
 

@@ -27,7 +27,7 @@ export function normalizePhone(raw: unknown): Result<string> {
   } else {
     s = normalizeDigits(stripFormatChars(String(raw ?? '')));
   }
-  s = s.replace(/[\s   \-()]/g, '');
+  s = s.replace(/[\s\-()]/g, '');
   if (!s) return { ok: false, reason: 'empty' };
 
   let plus = false;

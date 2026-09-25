@@ -49,7 +49,7 @@ function ScanChart({ data }: { data: DashboardData['chart'] }) {
     <figure>
       <svg viewBox={`0 0 ${width} ${h + 36}`} className="h-56 w-full" role="img" aria-label={t.admin.dashboard.chartTitle}>
         {data.map((d, i) => {
-          const x = i * (w + gap) + gap / 2;
+          const x = (data.length - 1 - i) * (w + gap) + gap / 2;
           const ho = (d.outbound / max) * h;
           const hr = (d.return / max) * h;
           return (

@@ -146,7 +146,7 @@ function StudentsBody({ universityId }: { universityId: string }) {
             <Search className="h-4 w-4" />
           </Button>
         </form>
-        <div className="grid grid-cols-2 gap-2 md:grid-cols-4 xl:grid-cols-7">
+        <div className="grid grid-cols-2 gap-2 md:grid-cols-4">
           <Select aria-label={f.college} value={filters.college} onChange={(e) => setFilter('college', e.target.value)}>
             <option value="">{f.college}: {t.common.all}</option>
             {(colleges.data ?? []).map((c) => (
