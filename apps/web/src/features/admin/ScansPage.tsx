@@ -290,6 +290,7 @@ function ScanMap({ rows }: { rows: ScanLogRow[] }) {
     void Promise.all([import('leaflet'), import('leaflet/dist/leaflet.css')]).then(([L]) => {
       if (disposed || !ref.current) return;
       const map = L.map(ref.current);
+      map.attributionControl.setPrefix(false);
       L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
         maxZoom: 19,
         attribution: '&copy; OpenStreetMap',

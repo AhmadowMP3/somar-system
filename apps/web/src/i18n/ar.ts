@@ -8,6 +8,8 @@ export const t = {
   shared: arShared,
   appName: 'سومر تورز — النقل الجامعي',
   appShortName: 'سومر تورز',
+  appDescription: 'نظام النقل الجامعي من سومر تورز',
+  listSeparator: '، ',
   brand: 'سومر تورز',
 
   common: {
@@ -560,6 +562,7 @@ export const t = {
       empty: 'لا توجد سجلات',
       actionFilter: 'نوع الإجراء',
       system: 'النظام',
+      unknownAction: 'إجراء آخر',
       fields: {
         full_name: 'الاسم',
         phone_e164: 'الهاتف',

@@ -46,11 +46,24 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
   return { ...parsed, version: readVersion() };
 }
 
+/** The Supabase URL as seen by browsers (may differ from the server-side SUPABASE_URL behind a private network). */
+export function publicSupabaseUrl(cfg: Config): string {
+  return cfg.VITE_SUPABASE_URL || cfg.SUPABASE_URL;
+}
+
+/** Rewrites a URL issued by Supabase for the server so that browsers can reach it. */
+export function toPublicUrl(cfg: Config, url: string): string {
+  const trim = (u: string) => (u.endsWith('/') ? u.slice(0, -1) : u);
+  const pub = trim(publicSupabaseUrl(cfg));
+  const internal = trim(cfg.SUPABASE_URL);
+  return pub && internal && pub !== internal && url.startsWith(internal) ? pub + url.slice(internal.length) : url;
+}
+
 /** Public, browser-safe runtime configuration injected into index.html. */
 export function publicRuntimeConfig(cfg: Config) {
   return {
-    supabaseUrl: cfg.SUPABASE_URL || cfg.VITE_SUPABASE_URL,
-    supabaseAnonKey: cfg.SUPABASE_ANON_KEY || cfg.VITE_SUPABASE_ANON_KEY,
+    supabaseUrl: publicSupabaseUrl(cfg),
+    supabaseAnonKey: cfg.VITE_SUPABASE_ANON_KEY || cfg.SUPABASE_ANON_KEY,
     apiBaseUrl: cfg.VITE_API_BASE_URL || '/api',
     vapidPublicKey: cfg.VAPID_PUBLIC_KEY,
     emailDomain: cfg.SUPABASE_STUDENT_EMAIL_DOMAIN,

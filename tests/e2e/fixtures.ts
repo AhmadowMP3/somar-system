@@ -82,7 +82,7 @@ export async function createE2EStudent(
   uni: E2EUniversity,
   opts: { subscribe?: boolean; photo?: boolean; ready?: boolean; password?: string } = {},
 ): Promise<E2EStudent> {
-  const name = `طالب واجهة ${randomBytes(2).toString('hex')}`;
+  const name = `طالب واجهة ${Math.floor(1000 + Math.random() * 9000)}`;
   const res = await provisionStudent(
     service,
     cfg,

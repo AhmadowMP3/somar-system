@@ -231,7 +231,7 @@ export default function StudentDetailPage() {
                   <dt className="text-muted">{t.student.residence}</dt>
                   <dd>{st.residence_text ?? t.common.none}</dd>
                   <dt className="text-muted">{t.student.workDays}</dt>
-                  <dd>{st.work_days.map((d) => t.days[d]).join('، ')}</dd>
+                  <dd>{st.work_days.map((d) => t.days[d]).join(t.listSeparator)}</dd>
                   <dt className="text-muted">{t.student.shiftStart}</dt>
                   <dd className="num">{formatClock(st.shift_start)}</dd>
                 </dl>

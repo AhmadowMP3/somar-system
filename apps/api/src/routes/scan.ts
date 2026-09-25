@@ -1,5 +1,6 @@
 import type { FastifyInstance } from 'fastify';
 import { arShared, scanRequestSchema, type ScanResult } from '@somar/shared';
+import { toPublicUrl } from '../config.js';
 import { authOf, type AppContext } from '../lib/auth.js';
 import { ApiError } from '../lib/errors.js';
 import { createUserClient } from '../lib/supabase.js';
@@ -31,7 +32,7 @@ export async function scanRoutes(app: FastifyInstance, ctx: AppContext) {
       const { data: signed } = await db.storage
         .from(cfg.SUPABASE_PHOTO_BUCKET)
         .createSignedUrl(result.student.photo_path, 3600);
-      result.student.photo_url = signed?.signedUrl ?? null;
+      result.student.photo_url = signed?.signedUrl ? toPublicUrl(cfg, signed.signedUrl) : null;
     }
     return result;
   });

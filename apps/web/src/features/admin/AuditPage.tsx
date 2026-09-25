@@ -22,7 +22,7 @@ type AuditRow = {
 function formatValue(v: unknown): string {
   if (v === null || v === undefined) return t.common.none;
   if (typeof v === 'boolean') return v ? t.common.yes : t.common.no;
-  if (Array.isArray(v)) return v.map(formatValue).join('، ');
+  if (Array.isArray(v)) return v.map(formatValue).join(t.listSeparator);
   if (typeof v === 'object') return '…';
   const str = String(v);
   return t.admin.audit.values[str] ?? str;
@@ -100,11 +100,11 @@ export default function AuditPage() {
           <DataList
             rows={rows}
             rowKey={(r) => r.id}
-            cardTitle={(r) => a.actions[r.action] ?? r.action}
+            cardTitle={(r) => a.actions[r.action] ?? a.unknownAction}
             columns={[
               { key: 'time', header: t.common.time, cell: (r) => <span className="num">{formatDateTime(r.created_at)}</span> },
               { key: 'actor', header: a.actor, cell: (r) => actorName(r.actor_profile_id) },
-              { key: 'action', header: a.action, cell: (r) => <Badge tone="info">{a.actions[r.action] ?? r.action}</Badge>, mobileHidden: true },
+              { key: 'action', header: a.action, cell: (r) => <Badge tone="info">{a.actions[r.action] ?? a.unknownAction}</Badge>, mobileHidden: true },
               {
                 key: 'changes',
                 header: a.changes,

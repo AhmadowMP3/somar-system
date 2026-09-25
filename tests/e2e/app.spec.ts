@@ -162,3 +162,61 @@ test('6. a student opens a stop and the Google Maps link carries the stored URL'
   await expect(link).toHaveText(/الاتجاهات على خرائط غوغل/);
   await expect(link).toHaveAttribute('href', uni.stopUrl);
 });
+
+/** Latin words allowed in the UI: product/format names and data values (codes, numbers). */
+const ALLOWED_LATIN = new Set(['QR', 'PDF', 'Excel', 'xlsx', 'JPEG', 'PNG', 'WEBP', 'iPhone', 'Safari', 'OpenStreetMap']);
+
+async function englishWords(page: Page): Promise<string[]> {
+  const text = await page.locator('body').innerText();
+  const words = text.match(/[A-Za-z][A-Za-z0-9-]*/g) ?? [];
+  return [...new Set(words)].filter((w) => !ALLOWED_LATIN.has(w) && !/^[A-Z0-9]+(-[A-Z0-9]+)*$/.test(w));
+}
+
+test('7. no English text is visible on the main screens of every role', async ({ page }) => {
+  const st = await createE2EStudent(uni, { subscribe: true, photo: true, ready: true });
+  const offenders: string[] = [];
+  const visit = async (paths: string[]) => {
+    for (const path of paths) {
+      await page.goto(path);
+      await page.waitForLoadState('networkidle');
+      await page.waitForTimeout(500);
+      for (const w of await englishWords(page)) offenders.push(`${path}: ${w}`);
+    }
+  };
+  await page.goto('/login');
+  for (const w of await englishWords(page)) offenders.push(`/login: ${w}`);
+
+  await login(page, st.transportNumber, STAFF_PASSWORD);
+  await expect(page).toHaveURL(/\/$/);
+  await visit(['/', '/trips', '/packages', '/routes', '/notifications', '/account', '/password']);
+  await page.context().clearCookies();
+  await page.evaluate(() => localStorage.clear());
+
+  await login(page, uni.supervisorCode, STAFF_PASSWORD);
+  await expect(page).toHaveURL(/\/scan$/);
+  await visit(['/scan']);
+  await page.evaluate(() => localStorage.clear());
+
+  await login(page, ADMIN_CODE, ADMIN_PASSWORD);
+  await expect(page).toHaveURL(/\/admin$/);
+  await visit([
+    '/admin',
+    '/admin/universities',
+    '/admin/colleges',
+    '/admin/areas',
+    '/admin/areas/mapping',
+    '/admin/packages',
+    '/admin/routes',
+    '/admin/students',
+    `/admin/students/${st.id}`,
+    '/admin/students/new',
+    '/admin/import',
+    '/admin/supervisors',
+    '/admin/scans',
+    '/admin/notifications',
+    '/admin/settings',
+    '/admin/audit',
+    `/admin/cards?ids=${st.id}`,
+  ]);
+  expect(offenders).toEqual([]);
+});

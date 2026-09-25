@@ -2,6 +2,7 @@ import { fileURLToPath, URL } from 'node:url';
 import react from '@vitejs/plugin-react';
 import { defineConfig } from 'vite';
 import { VitePWA } from 'vite-plugin-pwa';
+import { t } from './src/i18n/ar';
 
 export default defineConfig({
   envDir: '../..',
@@ -27,6 +28,11 @@ export default defineConfig({
     },
   },
   plugins: [
+    {
+      name: 'html-i18n',
+      transformIndexHtml: (html) =>
+        html.replaceAll('%APP_NAME%', t.appName).replaceAll('%APP_SHORT_NAME%', t.appShortName).replaceAll('%APP_DESCRIPTION%', t.appDescription),
+    },
     react(),
     VitePWA({
       strategies: 'injectManifest',
@@ -39,9 +45,9 @@ export default defineConfig({
         maximumFileSizeToCacheInBytes: 3 * 1024 * 1024,
       },
       manifest: {
-        name: 'سومر تورز — النقل الجامعي',
-        short_name: 'سومر تورز',
-        description: 'نظام النقل الجامعي من سومر تورز',
+        name: t.appName,
+        short_name: t.appShortName,
+        description: t.appDescription,
         lang: 'ar',
         dir: 'rtl',
         display: 'standalone',

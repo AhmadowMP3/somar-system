@@ -77,7 +77,7 @@ function RoutesBody({ universityId }: { universityId: string }) {
                   </div>
                   {route.active_days?.length ? (
                     <p className="mb-2 text-sm text-muted">
-                      {r.activeDays}: {route.active_days.map((d) => t.days[d]).join('، ')}
+                      {r.activeDays}: {route.active_days.map((d) => t.days[d]).join(t.listSeparator)}
                     </p>
                   ) : null}
                   {route.route_stops.length ? (

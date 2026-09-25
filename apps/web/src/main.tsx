@@ -38,7 +38,7 @@ createRoot(document.getElementById('root') as HTMLElement).render(
         <ToastProvider>
           <AuthProvider>
             <UniversityScopeProvider>
-              <RouterProvider router={router} />
+              <RouterProvider router={router} future={{ v7_startTransition: true }} />
             </UniversityScopeProvider>
           </AuthProvider>
         </ToastProvider>

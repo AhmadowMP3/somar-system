@@ -512,7 +512,7 @@ export function AccountPage() {
                 <dt className="text-muted">{t.student.phone}</dt>
                 <dd className="num">{formatPhoneDisplay(d.student.phone_e164)}</dd>
                 <dt className="text-muted">{t.student.workDays}</dt>
-                <dd>{d.student.work_days.map((w) => t.days[w]).join('، ')}</dd>
+                <dd>{d.student.work_days.map((w) => t.days[w]).join(t.listSeparator)}</dd>
                 <dt className="text-muted">{t.student.shiftStart}</dt>
                 <dd className="num">{formatClock(d.student.shift_start)}</dd>
                 {d.student.residence_text ? (

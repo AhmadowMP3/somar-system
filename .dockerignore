@@ -1,0 +1,16 @@
+**/node_modules
+**/dist
+**/dev-dist
+.git
+.github
+tests
+**/tests
+playwright-report
+test-results
+coverage
+.env
+.env.*
+!.env.example
+supabase/.temp
+supabase/.branches
+*.log
