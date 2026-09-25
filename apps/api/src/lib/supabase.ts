@@ -1,9 +1,14 @@
-import { createClient, type SupabaseClient } from '@supabase/supabase-js';
+import { createClient, type SupabaseClient, type SupabaseClientOptions } from '@supabase/supabase-js';
+import WebSocket from 'ws';
 import type { Config } from '../config.js';
 
+type RealtimeTransport = NonNullable<NonNullable<SupabaseClientOptions<'public'>['realtime']>['transport']>;
+
+/** Node 20 has no global WebSocket; supabase-js needs a transport for its (unused) realtime client. */
 const clientOptions = {
   auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false },
-} as const;
+  realtime: { transport: WebSocket as unknown as RealtimeTransport },
+};
 
 export type Db = SupabaseClient;
 

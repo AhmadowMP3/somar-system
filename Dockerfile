@@ -35,7 +35,18 @@ RUN npm run build -w @somar/shared \
  && npm run build -w @somar/web \
  && npm run build -w @somar/api
 
-# ---------- Stage 2: runtime ----------
+# ---------- Stage 2: production dependencies only ----------
+FROM node:20-slim AS deps
+WORKDIR /app
+COPY package.json package-lock.json ./
+COPY packages/shared/package.json packages/shared/
+COPY apps/api/package.json apps/api/
+COPY apps/web/package.json apps/web/
+RUN --mount=type=cache,target=/root/.npm npm ci --omit=dev --ignore-scripts --no-audit --no-fund \
+      --workspace @somar/api --workspace @somar/shared --include-workspace-root=false \
+ && find node_modules -type f \( -name "*.md" -o -name "*.map" \) -delete
+
+# ---------- Stage 3: runtime ----------
 FROM node:20-slim AS runtime
 WORKDIR /app
 ENV NODE_ENV=production \
@@ -43,20 +54,19 @@ ENV NODE_ENV=production \
     PORT=8080 \
     WEB_DIST_DIR=/app/apps/web/dist
 
+# dumb-init as PID 1, curl for the healthcheck; npm/yarn/corepack are not needed at runtime.
 RUN apt-get update \
  && apt-get install -y --no-install-recommends dumb-init curl ca-certificates tzdata \
  && rm -rf /var/lib/apt/lists/* \
  && groupadd --gid 10001 app \
- && useradd --uid 10001 --gid app --no-create-home --shell /usr/sbin/nologin app
+ && useradd --uid 10001 --gid app --no-create-home --shell /usr/sbin/nologin app \
+ && rm -rf /usr/local/lib/node_modules/npm /usr/local/lib/node_modules/corepack /opt/yarn-* \
+      /usr/local/bin/npm /usr/local/bin/npx /usr/local/bin/yarn /usr/local/bin/yarnpkg /usr/local/bin/corepack
 
-COPY package.json package-lock.json ./
+COPY package.json ./
 COPY packages/shared/package.json packages/shared/
 COPY apps/api/package.json apps/api/
-COPY apps/web/package.json apps/web/
-RUN --mount=type=cache,target=/root/.npm npm ci --omit=dev --ignore-scripts --no-audit --no-fund \
-      --workspace @somar/api --workspace @somar/shared --include-workspace-root=false \
- && npm cache clean --force
-
+COPY --from=deps /app/node_modules node_modules
 COPY --from=build /app/packages/shared/dist packages/shared/dist
 COPY --from=build /app/apps/api/dist apps/api/dist
 COPY --from=build /app/apps/web/dist apps/web/dist
