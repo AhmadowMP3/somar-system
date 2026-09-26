@@ -12,7 +12,7 @@ Resume rule: on a new session read this file and continue from the first uncheck
 - [x] Gate 8 — VAPID pair generated into .env.production (public BOL…kdvG8Q), doctor #12 PASS (2026-09-26 00:33 UTC); VAPID_SUBJECT email to confirm
 - [x] Gate 9 — App live on node:22-slim: healthz ok/db up, __APP_CONFIG__ injected, VITE_* baked into the bundle, 10 MB upload through Traefik OK, doctor 48 PASS / 0 FAIL (2026-09-26 09:56 UTC)
 - [x] Gate 10 — Admin "Sajed" created (idempotent re-run), headless login on the live domain renders the dashboard with 0 console errors (2026-09-26 10:01 UTC)
-- [ ] Gate 11 — Real data setup — demo guard + onboard built and tested; waiting for the owner's university/semester/package values
+- [x] Gate 11 — Demo guard verified on production; migration 0005 (no-dash numbers) applied; university onboarded: 3 colleges, 39 areas, 3 packages (2026-09-26 10:20 UTC)
 - [ ] Gate 12 — Routes and stops
 - [ ] Gate 13 — Import real students
 - [ ] Gate 14 — Live field test + operations docs
@@ -27,3 +27,9 @@ Resume rule: on a new session read this file and continue from the first uncheck
 | Postgres access | exposed publicly on the server IP, port 5432 (owner's choice) |
 | Student email domain | somar.local (probe passed; no change needed) |
 | Admin login code | Sajed |
+| University | جامعة الشهباء الخاصة |
+| Transport numbers | SHB0001, SHB0002, … (no dash) |
+| Week start | Friday (ISO 5) |
+| Semester | 2026-10-03 → 2027-02-06 |
+| Packages | باقة يومين بالاسبوع: 2 trips, 125 $ · باقة 3 ايام بالاسبوع: 3 trips, 175 $ · باقة 5 ايام بالاسبوع: 5 trips, 205 $ (no 4- or 6-day package — owner's choice) |
+| University logo | not set (only the Somar logo exists; the Al-Shahba logo can be uploaded from «الجامعات») |

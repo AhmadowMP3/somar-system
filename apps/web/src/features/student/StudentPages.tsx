@@ -241,7 +241,7 @@ export function PackagesPage() {
                   <p className="mt-1 text-sm text-brand-ink">{t.student.tripsPerWeek(p.trips_per_week)}</p>
                   {p.price !== null ? (
                     <p className="mt-2 text-sm">
-                      {t.student.price}: <span className="num font-bold">{Number(p.price).toLocaleString('en-US')}</span>
+                      {t.student.price}: <span className="num font-bold">{Number(p.price).toLocaleString('en-US')}</span> {t.currency}
                     </p>
                   ) : null}
                   <p className="mt-1 text-xs text-muted">

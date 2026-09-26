@@ -76,14 +76,15 @@ function UniversityDialog({ university, onClose }: { university: University | nu
   const [name, setName] = useState(university?.name ?? '');
   const [prefix, setPrefix] = useState(university?.transport_prefix ?? '');
   const [dow, setDow] = useState(university?.week_start_dow ?? 6);
+  const [separator, setSeparator] = useState<'-' | ''>(university?.transport_separator ?? '');
   const [active, setActive] = useState(university?.is_active ?? true);
   const [logo, setLogo] = useState<File | null>(null);
-  const ids = { name: useId(), prefix: useId(), dow: useId(), logo: useId() };
+  const ids = { name: useId(), prefix: useId(), dow: useId(), logo: useId(), sep: useId() };
   const prefixValid = /^[A-Z0-9]{1,10}$/.test(prefix);
 
   const save = useMutation({
     mutationFn: async () => {
-      const row = { name: name.trim(), transport_prefix: prefix, week_start_dow: dow, is_active: active };
+      const row = { name: name.trim(), transport_prefix: prefix, transport_separator: separator, week_start_dow: dow, is_active: active };
       const saved = university
         ? unwrap(await supabase.from('universities').update(row).eq('id', university.id).select('id').single())
         : unwrap(await supabase.from('universities').insert(row).select('id').single());
@@ -127,6 +128,12 @@ function UniversityDialog({ university, onClose }: { university: University | nu
             onChange={(e) => setPrefix(e.target.value.toUpperCase().trim())}
             required
           />
+        </Field>
+        <Field label={t.university.numberFormat} htmlFor={ids.sep} hint={t.university.numberFormatHint}>
+          <Select id={ids.sep} value={separator} onChange={(e) => setSeparator(e.target.value as '-' | '')} dir="ltr" className="text-start font-mono">
+            <option value="">{(prefix || 'SHB') + '0001'}</option>
+            <option value="-">{(prefix || 'SHB') + '-0001'}</option>
+          </Select>
         </Field>
         <Field label={t.university.weekStart} htmlFor={ids.dow}>
           <Select id={ids.dow} value={dow} onChange={(e) => setDow(Number(e.target.value))}>

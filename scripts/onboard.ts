@@ -5,7 +5,7 @@
  *     --name "جامعة الشهباء الخاصة" --prefix SHB --week-start sat \
  *     --start 2026-09-27 --end 2027-01-24 \
  *     --packages "4 أيام أسبوعياً:4:190000,5 أيام أسبوعياً:5:230000" \
- *     [--logo assets/somar_logo.png] [--dry-run]
+ *     [--separator none|dash] [--logo assets/somar_logo.png] [--dry-run]
  *
  * Creates/updates the university (matched by prefix), the 3 colleges, the approved areas from
  * supabase/seed/areas-shahba.txt, and the packages (matched by name). Existing rows are never deleted.
@@ -52,7 +52,10 @@ function parseArgs() {
       return { name: pname, trips: t, price: price ? Number(price) : null };
     });
   if (!packages.length) fail('--packages مطلوب');
-  return { name, prefix, weekStart, start, end, packages, logo: arg('logo'), dryRun: argv.includes('--dry-run') };
+  const sepArg = (arg('separator') ?? 'dash').toLowerCase();
+  if (!['none', 'dash'].includes(sepArg)) fail('--separator: none (SHB0001) أو dash (SHB-0001)');
+  const separator = sepArg === 'none' ? '' : '-';
+  return { name, prefix, separator, weekStart, start, end, packages, logo: arg('logo'), dryRun: argv.includes('--dry-run') };
 }
 
 async function main() {
@@ -68,13 +71,14 @@ async function main() {
   try {
     await client.query('begin');
     const uni = await client.query<{ id: string; inserted: boolean }>(
-      `insert into public.universities (name, transport_prefix, week_start_dow) values ($1, $2, $3)
-       on conflict (transport_prefix) do update set name = excluded.name, week_start_dow = excluded.week_start_dow
+      `insert into public.universities (name, transport_prefix, transport_separator, week_start_dow) values ($1, $2, $3, $4)
+       on conflict (transport_prefix) do update set name = excluded.name, transport_separator = excluded.transport_separator,
+         week_start_dow = excluded.week_start_dow
        returning id, (xmax = 0) as inserted`,
-      [opts.name, opts.prefix, opts.weekStart],
+      [opts.name, opts.prefix, opts.separator, opts.weekStart],
     );
     universityId = uni.rows[0]!.id;
-    created.push(`${uni.rows[0]!.inserted ? 'أُنشئت' : 'حُدّثت'} الجامعة: ${opts.name} (${opts.prefix}) · بداية الأسبوع ISO ${opts.weekStart}`);
+    created.push(`${uni.rows[0]!.inserted ? 'أُنشئت' : 'حُدّثت'} الجامعة: ${opts.name} · أرقام النقل ${opts.prefix}${opts.separator}0001 · بداية الأسبوع ISO ${opts.weekStart}`);
 
     const col = await client.query(
       `insert into public.colleges (university_id, name) select $1, unnest($2::text[]) on conflict (university_id, name) do nothing`,

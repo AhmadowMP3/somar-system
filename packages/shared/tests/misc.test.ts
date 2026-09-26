@@ -49,6 +49,7 @@ describe('transport numbers and login', () => {
     expect(formatTransportNumber('SHB', 1)).toBe('SHB-0001');
     expect(formatTransportNumber('shb', 42)).toBe('SHB-0042');
     expect(formatTransportNumber('SHB', 12345)).toBe('SHB-12345');
+    expect(formatTransportNumber('SHB', 1, '')).toBe('SHB0001');
     expect(() => formatTransportNumber('SHB', 0)).toThrow();
   });
   it('derives the synthetic email', () => {

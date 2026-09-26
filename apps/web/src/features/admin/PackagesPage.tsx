@@ -65,7 +65,7 @@ function PackagesBody({ universityId }: { universityId: string }) {
               {
                 key: 'price',
                 header: p.price,
-                cell: (r) => <span className="num">{r.price === null ? t.common.none : Number(r.price).toLocaleString('en-US')}</span>,
+                cell: (r) => (r.price === null ? t.common.none : <span><span className="num">{Number(r.price).toLocaleString('en-US')}</span> {t.currency}</span>),
               },
               {
                 key: 'semester',

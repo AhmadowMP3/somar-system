@@ -127,6 +127,7 @@ export type University = {
   name: string;
   logo_path: string | null;
   transport_prefix: string;
+  transport_separator: '-' | '';
   week_start_dow: number;
   is_active: boolean;
 };
@@ -157,7 +158,7 @@ export function UniversityScopeProvider({ children }: { children: ReactNode }) {
       unwrap(
         await supabase
           .from('universities')
-          .select('id, name, logo_path, transport_prefix, week_start_dow, is_active')
+          .select('id, name, logo_path, transport_prefix, transport_separator, week_start_dow, is_active')
           .order('name'),
       ) as University[],
   });

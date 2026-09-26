@@ -4,10 +4,10 @@ export const ROLES = ['admin', 'university_supervisor', 'supervisor', 'student']
 export type Role = (typeof ROLES)[number];
 export const SCANNER_ROLES: readonly Role[] = ['admin', 'university_supervisor', 'supervisor'];
 
-/** `{prefix}-{sequence:0000}` */
-export function formatTransportNumber(prefix: string, sequence: number): string {
+/** `{prefix}{separator}{sequence:0000}` — separator is '-' (SHB-0001) or '' (SHB0001). */
+export function formatTransportNumber(prefix: string, sequence: number, separator: '-' | '' = '-'): string {
   if (!Number.isInteger(sequence) || sequence < 1) throw new Error('Sequence must be a positive integer');
-  return `${prefix.trim().toUpperCase()}-${String(sequence).padStart(4, '0')}`;
+  return `${prefix.trim().toUpperCase()}${separator}${String(sequence).padStart(4, '0')}`;
 }
 
 /** Deterministic synthetic auth email for a login code. */
