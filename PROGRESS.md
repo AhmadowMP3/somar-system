@@ -4,7 +4,7 @@ Resume rule: on a new session read this file and continue from the first uncheck
 
 - [x] Gate 1 — Local review — approved by the owner, no changes requested (2026-09-25 23:36 UTC)
 - [x] Gate 2 — Domains — both valid Let's Encrypt certs, Supabase gateway answers 401 without key (expected) (2026-09-25 23:56 UTC)
-- [ ] Gate 3 — Supabase keys and database connection
+- [x] Gate 3 — Keys valid (anon/service_role, same instance, exp 2126), no leak, Postgres 15.8 reachable on the public port (2026-09-26 00:05 UTC)
 - [ ] Gate 4 — GoTrue configuration
 - [ ] Gate 5 — Database schema
 - [ ] Gate 6 — Storage buckets + logo
@@ -24,3 +24,4 @@ Resume rule: on a new session read this file and continue from the first uncheck
 | Local review URL | http://localhost:8787 (8080 is used by Steam) |
 | Supabase API domain | https://somar-supa.ahmad-zaven.io |
 | App domain | https://somar.ahmad-zaven.io |
+| Postgres access | exposed publicly on the server IP, port 5432 (owner's choice) |

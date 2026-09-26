@@ -30,7 +30,8 @@
     "supabase:start": "supabase start -x studio,realtime,edge-runtime,logflare,vector,mailpit,imgproxy,postgres-meta,supavisor",
     "review": "tsx scripts/review.ts",
     "review:stop": "tsx scripts/review.ts --stop",
-    "tour": "tsx scripts/tour.ts"
+    "tour": "tsx scripts/tour.ts",
+    "check:env": "tsx scripts/check-env.ts"
   },
   "devDependencies": {
     "@eslint/js": "^9.20.0",
