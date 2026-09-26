@@ -203,7 +203,23 @@ async function main() {
     'packages',
   ) as { id: string; trips_per_week: number; semester_end: string }[];
 
-  // routes: 3 outbound (one per main shift) + 1 return
+  // stop library (each stop saved once) and routes: 3 outbound (one per main shift) + 1 return
+  const library = must(
+    await db
+      .from('stops')
+      .insert(
+        STOPS.map((s) => ({
+          university_id: uni.id,
+          name: s.name,
+          area_id: areas.find((a) => a.name === s.name)?.id ?? null,
+          maps_url: `https://maps.google.com/?q=${s.lat},${s.lng}`,
+          lat: s.lat,
+          lng: s.lng,
+        })),
+      )
+      .select('id, name'),
+    'stop library',
+  ) as { id: string; name: string }[];
   const routeDefs = [
     { name: 'الخط الأول — الشفاء إلى الجامعة', direction: 'outbound', departure_time: '07:00', stops: [0, 1, 2, 5, 14, 15] },
     { name: 'الخط الثاني — الشهباء إلى الجامعة', direction: 'outbound', departure_time: '09:00', stops: [4, 3, 11, 6, 13, 2, 15] },
@@ -228,11 +244,7 @@ async function main() {
           return {
             route_id: route.id,
             seq: i + 1,
-            name: s.name,
-            area_id: areas.find((a) => a.name === s.name)?.id ?? null,
-            maps_url: `https://maps.google.com/?q=${s.lat},${s.lng}`,
-            lat: s.lat,
-            lng: s.lng,
+            stop_id: library.find((l) => l.name === s.name)?.id,
             departure_time: `${String(Math.floor(minutes / 60)).padStart(2, '0')}:${String(minutes % 60).padStart(2, '0')}`,
           };
         }),

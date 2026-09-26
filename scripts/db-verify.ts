@@ -10,7 +10,7 @@ import { loadProdEnv, Report, type ProdEnv } from './prod-env.js';
 export const APP_TABLES = [
   'universities', 'university_counters', 'colleges', 'areas', 'packages', 'routes', 'route_stops', 'profiles',
   'students', 'subscriptions', 'subscription_adjustments', 'scans', 'settings', 'broadcasts', 'notifications',
-  'notification_reads', 'push_subscriptions', 'audit_log',
+  'notification_reads', 'push_subscriptions', 'audit_log', 'stops',
 ];
 const FUNCTIONS = [
   'perform_scan', 'cancel_scan', 'student_week_balance', 'student_dashboard', 'my_scans_today', 'run_daily_jobs',

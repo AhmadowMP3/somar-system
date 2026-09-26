@@ -13,7 +13,7 @@ Resume rule: on a new session read this file and continue from the first uncheck
 - [x] Gate 9 — App live on node:22-slim: healthz ok/db up, __APP_CONFIG__ injected, VITE_* baked into the bundle, 10 MB upload through Traefik OK, doctor 48 PASS / 0 FAIL (2026-09-26 09:56 UTC)
 - [x] Gate 10 — Admin "Sajed" created (idempotent re-run), headless login on the live domain renders the dashboard with 0 console errors (2026-09-26 10:01 UTC)
 - [x] Gate 11 — Demo guard verified on production; migration 0005 (no-dash numbers) applied; university onboarded: 3 colleges, 39 areas, 3 packages (2026-09-26 10:20 UTC)
-- [ ] Gate 12 — Routes and stops
+- [ ] Gate 12 — Routes and stops — owner enters them in the UI; stop library added on request (migration 0006 applied to production)
 - [ ] Gate 13 — Import real students
 - [ ] Gate 14 — Live field test + operations docs
 

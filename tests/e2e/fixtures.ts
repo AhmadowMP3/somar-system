@@ -51,9 +51,17 @@ export async function createE2EUniversity(): Promise<E2EUniversity> {
     .select('id')
     .single();
   const stopUrl = 'https://maps.google.com/?q=36.2021,37.1343';
+  const { data: lib } = await service
+    .from('stops')
+    .insert([
+      { university_id: u.id, name: 'ساحة جامعة', maps_url: stopUrl, lat: 36.2021, lng: 37.1343 },
+      { university_id: u.id, name: 'الرجاء', maps_url: 'https://maps.google.com/?q=36.2322,37.1389', lat: 36.2322, lng: 37.1389 },
+    ])
+    .select('id, name');
+  const stopId = (name: string) => lib?.find((s) => s.name === name)?.id;
   await service.from('route_stops').insert([
-    { route_id: route?.id, seq: 1, name: 'ساحة جامعة', maps_url: stopUrl, lat: 36.2021, lng: 37.1343, departure_time: '07:05' },
-    { route_id: route?.id, seq: 2, name: 'الرجاء', maps_url: 'https://maps.google.com/?q=36.2322,37.1389', lat: 36.2322, lng: 37.1389, departure_time: '07:15' },
+    { route_id: route?.id, seq: 1, stop_id: stopId('ساحة جامعة'), departure_time: '07:05' },
+    { route_id: route?.id, seq: 2, stop_id: stopId('الرجاء'), departure_time: '07:15' },
   ]);
   const supervisorCode = `${prefix}-SUP`;
   await provisionStaff(service, cfg, {

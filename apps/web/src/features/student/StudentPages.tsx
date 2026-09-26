@@ -268,9 +268,11 @@ export type RouteRow = {
   is_active: boolean;
   route_stops: StopRow[];
 };
+/** A stop on a route: per-route order and time, with name/location coming from the stop library. */
 export type StopRow = {
   id: string;
   seq: number;
+  stop_id: string | null;
   name: string;
   maps_url: string | null;
   lat: number | null;
@@ -279,6 +281,10 @@ export type StopRow = {
   area_id: string | null;
 };
 
+type LibraryStopRef = { name: string; maps_url: string | null; lat: number | null; lng: number | null; area_id: string | null };
+type RawRouteStop = Omit<StopRow, 'name' | 'maps_url' | 'lat' | 'lng' | 'area_id'> &
+  Partial<LibraryStopRef> & { stop: LibraryStopRef | null };
+
 export function useRoutes(universityId: string | null | undefined, onlyActive: boolean) {
   return useQuery({
     queryKey: ['routes', universityId, onlyActive],
@@ -286,13 +292,46 @@ export function useRoutes(universityId: string | null | undefined, onlyActive: b
     queryFn: async () => {
       let q = supabase
         .from('routes')
-        .select('id, name, direction, departure_time, active_days, notes, is_active, route_stops(id, seq, name, maps_url, lat, lng, departure_time, area_id)')
+        .select(
+          'id, name, direction, departure_time, active_days, notes, is_active, route_stops(id, seq, stop_id, departure_time, name, maps_url, lat, lng, area_id, stop:stops(name, maps_url, lat, lng, area_id))',
+        )
         .eq('university_id', universityId as string)
         .order('departure_time', { nullsFirst: false })
         .order('seq', { referencedTable: 'route_stops' });
       if (onlyActive) q = q.eq('is_active', true);
-      return unwrap(await q) as RouteRow[];
+      const rows = unwrap(await q) as unknown as (Omit<RouteRow, 'route_stops'> & { route_stops: RawRouteStop[] })[];
+      return rows.map((r) => ({
+        ...r,
+        route_stops: r.route_stops.map((s) => ({
+          id: s.id,
+          seq: s.seq,
+          stop_id: s.stop_id,
+          departure_time: s.departure_time,
+          name: s.stop?.name ?? s.name ?? '',
+          maps_url: s.stop?.maps_url ?? s.maps_url ?? null,
+          lat: s.stop?.lat ?? s.lat ?? null,
+          lng: s.stop?.lng ?? s.lng ?? null,
+          area_id: s.stop?.area_id ?? s.area_id ?? null,
+        })),
+      })) as RouteRow[];
     },
+  });
+}
+
+export type LibraryStop = LibraryStopRef & { id: string; is_active: boolean };
+
+export function useStopLibrary(universityId: string | null | undefined) {
+  return useQuery({
+    queryKey: ['stops', universityId],
+    enabled: Boolean(universityId),
+    queryFn: async () =>
+      unwrap(
+        await supabase
+          .from('stops')
+          .select('id, name, maps_url, lat, lng, area_id, is_active')
+          .eq('university_id', universityId as string)
+          .order('name'),
+      ) as LibraryStop[],
   });
 }
 

@@ -220,3 +220,26 @@ test('7. no English text is visible on the main screens of every role', async ({
   ]);
   expect(offenders).toEqual([]);
 });
+
+test('8. admin saves a stop once in the library and adds it to a route from the dropdown', async ({ page }) => {
+  await login(page, ADMIN_CODE, ADMIN_PASSWORD);
+  await expect(page).toHaveURL(/\/admin$/);
+  await pickUniversity(page, uni.id);
+  await page.goto('/admin/stops');
+  await pickUniversity(page, uni.id);
+  await page.getByTestId('stop-add').click();
+  await page.getByTestId('stop-name').fill('جسر الحج');
+  await page.getByTestId('stop-url').fill('https://www.google.com/maps/@36.1893,37.1561,17z');
+  await page.getByTestId('stop-save').click();
+  await expect(page.getByText('جسر الحج').filter({ visible: true }).first()).toBeVisible();
+
+  await page.goto('/admin/routes');
+  await pickUniversity(page, uni.id);
+  await page.getByRole('button', { name: 'إضافة نقطة وقوف' }).first().click();
+  const select = page.getByTestId('route-stop-select');
+  await expect(select.locator('option', { hasText: 'ساحة جامعة' })).toHaveCount(0);
+  await select.selectOption({ label: 'جسر الحج' });
+  await page.getByLabel('موعد الانطلاق').last().fill('07:25');
+  await page.getByTestId('route-stop-save').click();
+  await expect(page.getByText('جسر الحج').filter({ visible: true }).first()).toBeVisible();
+});

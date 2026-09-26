@@ -1,15 +1,16 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { ArrowDown, ArrowUp, ExternalLink, Pencil, Plus, Trash2 } from 'lucide-react';
 import { useId, useState, type FormEvent } from 'react';
-import { formatClock, parseMapsUrl } from '@somar/shared';
-import { useRoutes, type RouteRow, type StopRow } from '@/features/student/StudentPages';
+import { formatClock } from '@somar/shared';
+import { Link } from 'react-router-dom';
+import { useRoutes, useStopLibrary, type RouteRow, type StopRow } from '@/features/student/StudentPages';
 import { ConfirmDialog, Dialog, useToast } from '@/components/ui/overlay';
 import { Badge, Button, Card, Field, Input, Select, Switch, Textarea } from '@/components/ui/primitives';
 import { EmptyState, PageHeader, QueryState } from '@/components/ui/states';
 import { t } from '@/i18n/ar';
 import { errorMessage } from '@/lib/errors';
 import { supabase, unwrap } from '@/lib/supabase';
-import { ActiveBadge, DayToggles, useAreas, WithUniversity } from './common';
+import { ActiveBadge, DayToggles, WithUniversity } from './common';
 
 export default function RoutesPage() {
   return <WithUniversity>{(universityId) => <RoutesBody universityId={universityId} />}</WithUniversity>;
@@ -45,10 +46,15 @@ function RoutesBody({ universityId }: { universityId: string }) {
       <PageHeader
         title={r.title}
         actions={
-          <Button variant="secondary" onClick={() => setEditingRoute('new')}>
-            <Plus className="h-4 w-4" aria-hidden />
-            {r.add}
-          </Button>
+          <>
+            <Button asChild>
+              <Link to="/admin/stops">{r.manageStops}</Link>
+            </Button>
+            <Button variant="secondary" onClick={() => setEditingRoute('new')}>
+              <Plus className="h-4 w-4" aria-hidden />
+              {r.add}
+            </Button>
+          </>
         }
       />
       <QueryState query={query} empty={(rows) => (rows.length ? null : <EmptyState title={r.empty} />)}>
@@ -246,27 +252,17 @@ function StopDialog({ universityId, route, stop, onClose, onSaved }: {
 }) {
   const r = t.admin.routes;
   const toast = useToast();
-  const areas = useAreas(universityId);
-  const [form, setForm] = useState({
-    name: stop?.name ?? '',
-    maps_url: stop?.maps_url ?? '',
-    departure_time: toTime(stop?.departure_time),
-    area_id: stop?.area_id ?? '',
-  });
+  const library = useStopLibrary(universityId);
+  const [stopId, setStopId] = useState(stop?.stop_id ?? '');
+  const [time, setTime] = useState(toTime(stop?.departure_time));
   const [pending, setPending] = useState<Pending>(null);
-  const ids = { name: useId(), url: useId(), time: useId(), area: useId() };
-  const coords = parseMapsUrl(form.maps_url);
+  const ids = { stop: useId(), time: useId() };
+  const used = new Set(route.route_stops.filter((s) => s.id !== stop?.id).map((s) => s.stop_id));
+  const options = (library.data ?? []).filter((s) => (s.is_active || s.id === stopId) && !used.has(s.id));
+  const chosen = library.data?.find((s) => s.id === stopId);
   const save = useMutation({
     mutationFn: async () => {
-      const row = {
-        route_id: route.id,
-        name: form.name.trim(),
-        maps_url: form.maps_url.trim() || null,
-        lat: coords?.lat ?? null,
-        lng: coords?.lng ?? null,
-        departure_time: form.departure_time || null,
-        area_id: form.area_id || null,
-      };
+      const row = { route_id: route.id, stop_id: stopId, departure_time: time || null };
       if (stop) unwrap(await supabase.from('route_stops').update(row).eq('id', stop.id));
       else {
         const seq = Math.max(0, ...route.route_stops.map((s) => s.seq)) + 1;
@@ -282,47 +278,51 @@ function StopDialog({ universityId, route, stop, onClose, onSaved }: {
   });
   const submit = (e: FormEvent) => {
     e.preventDefault();
-    if (!form.name.trim()) return;
-    const timeChanged = stop && form.departure_time && form.departure_time !== toTime(stop.departure_time);
+    if (!stopId) return;
+    const timeChanged = stop && time && time !== toTime(stop.departure_time);
     if (timeChanged) setPending({ apply: () => save.mutate() });
     else save.mutate();
   };
   return (
     <>
       <Dialog open={pending === null} onOpenChange={(o) => !o && onClose()} title={stop ? t.common.edit : r.addStop} description={route.name}>
-        <form className="space-y-4" onSubmit={submit}>
-          <Field label={r.stopName} htmlFor={ids.name}>
-            <Input id={ids.name} value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} required />
-          </Field>
-          <Field
-            label={r.mapsUrl}
-            htmlFor={ids.url}
-            hint={form.maps_url ? (coords ? `${r.coords}: ${coords.lat}, ${coords.lng}` : r.coordsMissing) : r.mapsHint}
-          >
-            <Input id={ids.url} dir="ltr" className="text-start" value={form.maps_url} onChange={(e) => setForm({ ...form, maps_url: e.target.value })} />
-          </Field>
-          <div className="grid grid-cols-2 gap-3">
-            <Field label={r.departure} htmlFor={ids.time}>
-              <Input id={ids.time} type="time" value={form.departure_time} onChange={(e) => setForm({ ...form, departure_time: e.target.value })} />
-            </Field>
-            <Field label={r.area} htmlFor={ids.area}>
-              <Select id={ids.area} value={form.area_id} onChange={(e) => setForm({ ...form, area_id: e.target.value })}>
-                <option value="">{t.common.none}</option>
-                {(areas.data ?? []).map((a) => (
-                  <option key={a.id} value={a.id}>
-                    {a.name}
+        {library.isLoading ? null : !(library.data ?? []).length ? (
+          <EmptyState
+            title={r.libraryEmpty}
+            action={
+              <Button asChild variant="secondary">
+                <Link to="/admin/stops">{r.manageStops}</Link>
+              </Button>
+            }
+          />
+        ) : (
+          <form className="space-y-4" onSubmit={submit}>
+            <Field label={r.pickStop} htmlFor={ids.stop} hint={chosen ? (chosen.lat !== null ? `${r.coords}: ${chosen.lat}, ${chosen.lng}` : r.coordsMissing) : undefined}>
+              <Select id={ids.stop} value={stopId} onChange={(e) => setStopId(e.target.value)} data-testid="route-stop-select">
+                <option value="">{t.common.select}</option>
+                {options.map((s) => (
+                  <option key={s.id} value={s.id}>
+                    {s.name}
                   </option>
                 ))}
               </Select>
             </Field>
-          </div>
-          <div className="flex justify-end gap-2">
-            <Button onClick={onClose}>{t.common.cancel}</Button>
-            <Button type="submit" variant="secondary" disabled={save.isPending}>
-              {t.common.save}
-            </Button>
-          </div>
-        </form>
+            <Field label={r.departure} htmlFor={ids.time}>
+              <Input id={ids.time} type="time" value={time} onChange={(e) => setTime(e.target.value)} />
+            </Field>
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <Button asChild variant="link">
+                <Link to="/admin/stops">{r.manageStops}</Link>
+              </Button>
+              <div className="flex gap-2">
+                <Button onClick={onClose}>{t.common.cancel}</Button>
+                <Button type="submit" variant="secondary" disabled={!stopId || save.isPending} data-testid="route-stop-save">
+                  {t.common.save}
+                </Button>
+              </div>
+            </div>
+          </form>
+        )}
       </Dialog>
       <TimeChangeConfirm pending={pending} onCancel={() => setPending(null)} />
     </>
