@@ -9,7 +9,7 @@ Resume rule: on a new session read this file and continue from the first uncheck
 - [x] Gate 5 — 4 migrations applied and tracked, db:verify all PASS (18 tables with RLS, functions, indexes, empty clock, anon sees nothing) (2026-09-26 00:19 UTC)
 - [x] Gate 6 — Buckets private + policies + round trip (public signed-URL host); brand logo installed (login, header, card, PWA icons, favicon) (2026-09-26 00:27 UTC)
 - [x] Gate 7 — doctor built; production: 42 PASS, expected FAILs only (#10 upload, #12 VAPID, #13 app config → fixed by gates 8–9) in 12.5 s (2026-09-26 00:31 UTC)
-- [ ] Gate 8 — VAPID keys
+- [x] Gate 8 — VAPID pair generated into .env.production (public BOL…kdvG8Q), doctor #12 PASS (2026-09-26 00:33 UTC); VAPID_SUBJECT email to confirm
 - [ ] Gate 9 — Deploy on Coolify
 - [ ] Gate 10 — Admin account
 - [ ] Gate 11 — Real data setup
