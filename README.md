@@ -84,6 +84,7 @@ Copy `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY` and `VITE_VAPID_PUBLIC_KEY` into Co
 3. Add the variables from 1.5 (mark `VITE_*` as build variables).
 4. Attach the domain and enable **HTTPS** — required: the camera, geolocation and service worker do not work over plain HTTP.
 5. Run **one** replica (the scheduler runs in-process). For more replicas set `DISABLE_CRON=true` on all but one.
+6. Image size: about **305 MB unpacked** (`node:22-slim` base). Docker Desktop's size column shows more because it also counts the compressed layer blobs.
 
 ### 1.8 Create the first admin
 Set `BOOTSTRAP_ADMIN_CODE` (default `ADMIN`) and a strong `BOOTSTRAP_ADMIN_PASSWORD` (8+ chars, uppercase, digit, symbol), then run
@@ -133,7 +134,7 @@ Log in as the admin → **الجامعات** (name, logo, transport prefix e.g. 
 
 ## 3. Local development
 
-Requirements: Node ≥ 20, Docker Desktop.
+Requirements: Node ≥ 22, Docker Desktop.
 
 **Option A — Supabase CLI (recommended, used by the test suite)**
 ```bash

@@ -6,7 +6,6 @@ import { randomBytes } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { createClient } from '@supabase/supabase-js';
-import WebSocket from 'ws';
 import { connect, MIGRATIONS_DIR } from './db-migrations.js';
 import { loadProdEnv, Report, type ProdEnv } from './prod-env.js';
 
@@ -23,7 +22,6 @@ function buckets(env: ProdEnv) {
 function storageClient(env: ProdEnv) {
   return createClient(env.SUPABASE_URL as string, env.SUPABASE_SERVICE_ROLE_KEY as string, {
     auth: { persistSession: false },
-    realtime: { transport: WebSocket as never },
   });
 }
 

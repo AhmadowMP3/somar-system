@@ -1,7 +1,7 @@
 # syntax=docker/dockerfile:1.7
 
 # ---------- Stage 1: build ----------
-FROM node:20-slim AS build
+FROM node:22-slim AS build
 WORKDIR /app
 ENV CI=true
 
@@ -36,7 +36,7 @@ RUN npm run build -w @somar/shared \
  && npm run build -w @somar/api
 
 # ---------- Stage 2: production dependencies only ----------
-FROM node:20-slim AS deps
+FROM node:22-slim AS deps
 WORKDIR /app
 COPY package.json package-lock.json ./
 COPY packages/shared/package.json packages/shared/
@@ -47,7 +47,7 @@ RUN --mount=type=cache,target=/root/.npm npm ci --omit=dev --ignore-scripts --no
  && find node_modules -type f \( -name "*.md" -o -name "*.map" \) -delete
 
 # ---------- Stage 3: runtime ----------
-FROM node:20-slim AS runtime
+FROM node:22-slim AS runtime
 WORKDIR /app
 ENV NODE_ENV=production \
     TZ=Asia/Damascus \

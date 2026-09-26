@@ -9,7 +9,7 @@
     "apps/web"
   ],
   "engines": {
-    "node": ">=20"
+    "node": ">=22"
   },
   "scripts": {
     "dev": "npm run build -w @somar/shared && concurrently -n api,web \"npm run dev -w @somar/api\" \"npm run dev -w @somar/web\"",

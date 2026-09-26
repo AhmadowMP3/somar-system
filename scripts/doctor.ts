@@ -7,7 +7,6 @@ import { randomBytes } from 'node:crypto';
 import { writeFileSync } from 'node:fs';
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import webpush from 'web-push';
-import WebSocket from 'ws';
 import { loginCodeToEmail } from '@somar/shared';
 import { checkAuth } from './check-auth.js';
 import { connect } from './db-migrations.js';
@@ -18,7 +17,7 @@ import { checkBucketsPrivate, storageRoundTrip } from './storage-setup.js';
 const started = Date.now();
 const env = loadProdEnv();
 const r = new Report();
-const opts = { auth: { persistSession: false, autoRefreshToken: false }, realtime: { transport: WebSocket as never } };
+const opts = { auth: { persistSession: false, autoRefreshToken: false } };
 const GEO = { p_lat: 36.2021, p_lng: 37.1343, p_accuracy: 10 };
 
 async function section(title: string, fn: () => Promise<unknown>) {
