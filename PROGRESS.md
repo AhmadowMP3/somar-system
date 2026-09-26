@@ -10,7 +10,7 @@ Resume rule: on a new session read this file and continue from the first uncheck
 - [x] Gate 6 — Buckets private + policies + round trip (public signed-URL host); brand logo installed (login, header, card, PWA icons, favicon) (2026-09-26 00:27 UTC)
 - [x] Gate 7 — doctor built; production: 42 PASS, expected FAILs only (#10 upload, #12 VAPID, #13 app config → fixed by gates 8–9) in 12.5 s (2026-09-26 00:31 UTC)
 - [x] Gate 8 — VAPID pair generated into .env.production (public BOL…kdvG8Q), doctor #12 PASS (2026-09-26 00:33 UTC); VAPID_SUBJECT email to confirm
-- [ ] Gate 9 — Deploy on Coolify
+- [x] Gate 9 — App live on node:22-slim: healthz ok/db up, __APP_CONFIG__ injected, VITE_* baked into the bundle, 10 MB upload through Traefik OK, doctor 48 PASS / 0 FAIL (2026-09-26 09:56 UTC)
 - [ ] Gate 10 — Admin account
 - [ ] Gate 11 — Real data setup
 - [ ] Gate 12 — Routes and stops
