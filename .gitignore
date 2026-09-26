@@ -23,3 +23,4 @@ assets/*.xlsx
 assets/*.xls
 assets/*.csv
 import-*.xlsx
+.serena/
