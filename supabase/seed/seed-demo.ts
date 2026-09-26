@@ -2,7 +2,9 @@
  * Demo data seed (§14). Idempotent: if the demo university already exists it does nothing unless
  * `--reset` is passed, which deletes the demo university, its accounts and all dependent rows first.
  *
- * Usage: npm run seed:demo [-- --reset]
+ * Usage: npm run seed:demo [-- --reset] [--force-demo]
+ * Guard: refuses to run when NODE_ENV=production or when the database already holds any university other than
+ * the demo one (identified by name AND prefix), unless --force-demo is passed.
  * Needs SUPABASE_URL + SUPABASE_SERVICE_ROLE_KEY (from .env or the environment).
  */
 import { writeFileSync } from 'node:fs';
@@ -49,8 +51,55 @@ function must<T>(res: { data: T | null; error: { message: string } | null }, wha
   return res.data as T;
 }
 
+function demoUniversity() {
+  return db
+    .from('universities')
+    .select('id')
+    .eq('transport_prefix', DEMO_UNIVERSITY.transport_prefix)
+    .eq('name', DEMO_UNIVERSITY.name)
+    .maybeSingle();
+}
+
+class GuardError extends Error {}
+
+function abort(lines: string[]): never {
+  throw new GuardError(lines.join('\n'));
+}
+
+/** Never let demo data reach a real installation. Runs before any write. */
+async function guard(args: string[]) {
+  if (args.includes('--force-demo')) return;
+  if (process.env.NODE_ENV === 'production') {
+    abort([
+      '⛔ تم إيقاف تحميل البيانات التجريبية: NODE_ENV=production.',
+      '   البيانات التجريبية (80 طالباً وهمياً وسجل مسح مزيّف) لا يجوز أن تدخل قاعدة بيانات حقيقية.',
+      '   إن كانت هذه قاعدة محلية للتجربة فقط، أعد التشغيل مع --force-demo.',
+    ]);
+  }
+  const host = new URL(cfg.SUPABASE_URL).hostname;
+  if (!['localhost', '127.0.0.1', '::1', 'host.docker.internal', 'kong'].includes(host)) {
+    abort([
+      `⛔ تم إيقاف تحميل البيانات التجريبية: Supabase ليس محلياً (${host}).`,
+      '   البيانات التجريبية مخصصة لبيئة المراجعة المحلية فقط.',
+      '   استخدم --force-demo فقط لخادم تجربة منفصل وليس للإنتاج.',
+    ]);
+  }
+  const { data, error } = await db.from('universities').select('name, transport_prefix');
+  if (error) throw new Error(`guard: ${error.message}`);
+  const real = (data ?? []).filter(
+    (u) => !(u.name === DEMO_UNIVERSITY.name && u.transport_prefix === DEMO_UNIVERSITY.transport_prefix),
+  );
+  if (real.length) {
+    abort([
+      '⛔ تم إيقاف تحميل البيانات التجريبية: قاعدة البيانات تحتوي جامعة حقيقية:',
+      ...real.map((u) => `   • ${u.name} (${u.transport_prefix})`),
+      '   لن تُخلط بيانات وهمية مع بيانات حقيقية. استخدم --force-demo فقط إن كنت متأكداً أنها قاعدة تجربة.',
+    ]);
+  }
+}
+
 async function reset() {
-  const { data: uni } = await db.from('universities').select('id').eq('transport_prefix', DEMO_UNIVERSITY.transport_prefix).maybeSingle();
+  const { data: uni } = await demoUniversity();
   if (!uni) return;
   const { data: profiles } = await db.from('profiles').select('id').eq('university_id', uni.id);
   for (const p of profiles ?? []) await db.auth.admin.deleteUser(p.id as string);
@@ -119,12 +168,13 @@ const WEEK_ORDER = [6, 7, 1, 2, 3, 4, 5];
 
 async function main() {
   const args = process.argv.slice(2);
+  await guard(args);
   if (args.includes('--reset')) await reset();
 
   writeFileSync(IMPORT_FILE, buildWorkbook());
   const adminId = await ensureAdmin();
 
-  const { data: existing } = await db.from('universities').select('id').eq('transport_prefix', DEMO_UNIVERSITY.transport_prefix).maybeSingle();
+  const { data: existing } = await demoUniversity();
   if (existing) {
     console.log('demo university already exists — nothing to do (use --reset to rebuild)');
     return;
@@ -406,7 +456,7 @@ async function main() {
   console.log(`  emails use ${loginCodeToEmail('x', cfg.SUPABASE_STUDENT_EMAIL_DOMAIN).slice(2)}`);
 }
 
-main().catch((err) => {
-  console.error(err);
-  process.exit(1);
+main().catch((err: unknown) => {
+  console.error(err instanceof GuardError ? err.message : err);
+  process.exitCode = err instanceof GuardError ? 2 : 1;
 });

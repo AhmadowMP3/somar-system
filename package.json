@@ -36,7 +36,8 @@
     "db:status": "tsx scripts/db-apply.ts --status",
     "db:verify": "tsx scripts/db-verify.ts",
     "storage:setup": "tsx scripts/storage-setup.ts",
-    "doctor": "tsx scripts/doctor.ts"
+    "doctor": "tsx scripts/doctor.ts",
+    "onboard": "tsx scripts/onboard.ts"
   },
   "devDependencies": {
     "@eslint/js": "^9.20.0",
