@@ -65,3 +65,45 @@ describe('stop library', () => {
     expect(notes?.[0]?.body).toContain('07:20');
   });
 });
+
+describe('duplicate_route', () => {
+  it('copies the route with its stops and times; only staff of that university may do it', async () => {
+    const lib = await gs
+      .from('stops')
+      .insert([
+        { university_id: fx.universityId, name: 'نقطة أ' },
+        { university_id: fx.universityId, name: 'نقطة ب' },
+      ])
+      .select('id, name');
+    const src = await gs
+      .from('routes')
+      .insert({ university_id: fx.universityId, name: 'خط المصدر', direction: 'outbound', departure_time: '08:00', active_days: [5, 6] })
+      .select('id')
+      .single();
+    await gs.from('route_stops').insert([
+      { route_id: src.data?.id, seq: 1, stop_id: lib.data?.[0]?.id, departure_time: '08:05' },
+      { route_id: src.data?.id, seq: 2, stop_id: lib.data?.[1]?.id, departure_time: '08:15' },
+    ]);
+
+    const { data: copyId, error } = await gs.rpc('duplicate_route', { p_route_id: src.data?.id, p_name: 'خط المصدر (نسخة)' });
+    expect(error).toBeNull();
+    const copy = await service
+      .from('routes')
+      .select('name, direction, departure_time, active_days, route_stops(seq, stop_id, departure_time)')
+      .eq('id', copyId as string)
+      .single();
+    expect(copy.data?.name).toBe('خط المصدر (نسخة)');
+    expect(copy.data?.active_days).toEqual([5, 6]);
+    const stops = [...(copy.data?.route_stops ?? [])].sort((a, b) => a.seq - b.seq);
+    expect(stops.map((s) => [s.stop_id, s.departure_time])).toEqual([
+      [lib.data?.[0]?.id, '08:05:00'],
+      [lib.data?.[1]?.id, '08:15:00'],
+    ]);
+
+    const byStudent = await student.rpc('duplicate_route', { p_route_id: src.data?.id });
+    expect(byStudent.error?.message).toBe('FORBIDDEN');
+    const otherGs = (await createStaff(other, 'university_supervisor')).client;
+    const byOther = await otherGs.rpc('duplicate_route', { p_route_id: src.data?.id });
+    expect(byOther.error?.message).toBe('FORBIDDEN');
+  });
+});

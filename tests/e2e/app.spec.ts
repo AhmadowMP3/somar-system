@@ -236,10 +236,23 @@ test('8. admin saves a stop once in the library and adds it to a route from the 
   await page.goto('/admin/routes');
   await pickUniversity(page, uni.id);
   await page.getByRole('button', { name: 'إضافة نقطة وقوف' }).first().click();
-  const select = page.getByTestId('route-stop-select');
-  await expect(select.locator('option', { hasText: 'ساحة جامعة' })).toHaveCount(0);
-  await select.selectOption({ label: 'جسر الحج' });
+  const options = page.getByTestId('stop-options');
+  await expect(options.getByText('ساحة جامعة')).toHaveCount(0);
+  await page.getByTestId('stop-search').fill('جسر');
+  await expect(options.getByRole('option')).toHaveCount(1);
+  await options.getByText('جسر الحج').click();
   await page.getByLabel('موعد الانطلاق').last().fill('07:25');
   await page.getByTestId('route-stop-save').click();
   await expect(page.getByText('جسر الحج').filter({ visible: true }).first()).toBeVisible();
+
+  // duplicate the route: the copy opens for editing and keeps the stops
+  await page.getByRole('button', { name: 'نسخ الخط' }).first().click();
+  await expect(page.getByRole('dialog')).toBeVisible();
+  await page.getByRole('button', { name: 'حفظ' }).click();
+  await expect(page.getByText('خط الواجهة (نسخة)').first()).toBeVisible();
+
+  // copy a stop to another route: a route that already has it is disabled
+  await page.getByTestId('copy-stop').first().click();
+  const targets = page.getByTestId('copy-targets');
+  await expect(targets.getByRole('button', { name: /\(نسخة\)/ })).toBeDisabled();
 });

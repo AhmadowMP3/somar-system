@@ -1,9 +1,9 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { ArrowDown, ArrowUp, ExternalLink, Pencil, Plus, Trash2 } from 'lucide-react';
+import { ArrowDown, ArrowUp, Check, Copy, CopyPlus, ExternalLink, Pencil, Plus, Search, Trash2 } from 'lucide-react';
 import { useId, useState, type FormEvent } from 'react';
-import { formatClock } from '@somar/shared';
+import { foldArabic, formatClock } from '@somar/shared';
 import { Link } from 'react-router-dom';
-import { useRoutes, useStopLibrary, type RouteRow, type StopRow } from '@/features/student/StudentPages';
+import { useRoutes, useStopLibrary, type LibraryStop, type RouteRow, type StopRow } from '@/features/student/StudentPages';
 import { ConfirmDialog, Dialog, useToast } from '@/components/ui/overlay';
 import { Badge, Button, Card, Field, Input, Select, Switch, Textarea } from '@/components/ui/primitives';
 import { EmptyState, PageHeader, QueryState } from '@/components/ui/states';
@@ -40,6 +40,18 @@ function RoutesBody({ universityId }: { universityId: string }) {
     onSuccess: invalidate,
     onError: (e) => toast.error(errorMessage(e)),
   });
+  const [copyingStop, setCopyingStop] = useState<{ route: RouteRow; stop: StopRow } | null>(null);
+  const duplicate = useMutation({
+    mutationFn: async (route: RouteRow) =>
+      unwrap(await supabase.rpc('duplicate_route', { p_route_id: route.id, p_name: `${route.name}${r.copySuffix}` })) as string,
+    onSuccess: async (newId) => {
+      toast.success(r.duplicated);
+      const fresh = await query.refetch();
+      const copy = fresh.data?.find((x) => x.id === newId);
+      if (copy) setEditingRoute(copy);
+    },
+    onError: (e) => toast.error(errorMessage(e)),
+  });
 
   return (
     <div>
@@ -74,6 +86,10 @@ function RoutesBody({ universityId }: { universityId: string }) {
                       <Button size="sm" onClick={() => setEditingRoute(route)}>
                         <Pencil className="h-4 w-4" aria-hidden />
                         {t.common.edit}
+                      </Button>
+                      <Button size="sm" onClick={() => duplicate.mutate(route)} disabled={duplicate.isPending} data-testid={`duplicate-${route.id}`}>
+                        <Copy className="h-4 w-4" aria-hidden />
+                        {r.duplicate}
                       </Button>
                       <Button size="sm" variant="secondary" onClick={() => setEditingStop({ route, stop: null })}>
                         <Plus className="h-4 w-4" aria-hidden />
@@ -113,6 +129,9 @@ function RoutesBody({ universityId }: { universityId: string }) {
                             <Button size="icon" variant="ghost" aria-label={t.common.edit} onClick={() => setEditingStop({ route, stop: s })}>
                               <Pencil className="h-4 w-4" />
                             </Button>
+                            <Button size="icon" variant="ghost" aria-label={r.copyStop} title={r.copyStop} onClick={() => setCopyingStop({ route, stop: s })} data-testid="copy-stop">
+                              <CopyPlus className="h-4 w-4" />
+                            </Button>
                             <Button size="icon" variant="ghost" aria-label={t.common.delete} onClick={() => removeStop.mutate(s.id)}>
                               <Trash2 className="h-4 w-4 text-danger" />
                             </Button>
@@ -135,6 +154,118 @@ function RoutesBody({ universityId }: { universityId: string }) {
       {editingStop ? (
         <StopDialog universityId={universityId} route={editingStop.route} stop={editingStop.stop} onClose={() => setEditingStop(null)} onSaved={invalidate} />
       ) : null}
+      {copyingStop ? (
+        <CopyStopDialog
+          source={copyingStop.route}
+          stop={copyingStop.stop}
+          routes={query.data ?? []}
+          onClose={() => setCopyingStop(null)}
+          onSaved={invalidate}
+        />
+      ) : null}
+    </div>
+  );
+}
+
+function CopyStopDialog({ source, stop, routes, onClose, onSaved }: {
+  source: RouteRow;
+  stop: StopRow;
+  routes: RouteRow[];
+  onClose: () => void;
+  onSaved: () => void;
+}) {
+  const r = t.admin.routes;
+  const toast = useToast();
+  const targets = routes.filter((x) => x.id !== source.id);
+  const copy = useMutation({
+    mutationFn: async (target: RouteRow) => {
+      const seq = Math.max(0, ...target.route_stops.map((s) => s.seq)) + 1;
+      unwrap(
+        await supabase
+          .from('route_stops')
+          .insert({ route_id: target.id, stop_id: stop.stop_id, seq, departure_time: stop.departure_time }),
+      );
+      return target.name;
+    },
+    onSuccess: (name) => {
+      toast.success(r.copiedTo(name));
+      onSaved();
+      onClose();
+    },
+    onError: (e) => toast.error(errorMessage(e)),
+  });
+  return (
+    <Dialog open onOpenChange={(o) => !o && onClose()} title={r.copyStopTitle} description={`${stop.name} · ${r.copyStopHint}`}>
+      {targets.length ? (
+        <ul className="max-h-[50vh] space-y-2 overflow-y-auto" data-testid="copy-targets">
+          {targets.map((target) => {
+            const already = target.route_stops.some((s) => s.stop_id === stop.stop_id);
+            return (
+              <li key={target.id}>
+                <button
+                  type="button"
+                  disabled={already || copy.isPending}
+                  onClick={() => copy.mutate(target)}
+                  className="flex min-h-touch w-full items-center justify-between gap-2 rounded-lg border border-border px-3 py-2 text-start hover:bg-surface disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  <span className="font-semibold">{target.name}</span>
+                  <span className="flex items-center gap-2 text-xs">
+                    <Badge tone="info">{r.directions[target.direction]}</Badge>
+                    {already ? <Badge>{r.alreadyInRoute}</Badge> : null}
+                  </span>
+                </button>
+              </li>
+            );
+          })}
+        </ul>
+      ) : (
+        <EmptyState title={r.noOtherRoutes} />
+      )}
+    </Dialog>
+  );
+}
+
+/** Search-as-you-type stop picker (Arabic spelling variants are folded, e.g. أ/ا، ة/ه، ى/ي). */
+function StopPicker({ stops, value, onChange }: { stops: LibraryStop[]; value: string; onChange: (id: string) => void }) {
+  const r = t.admin.routes;
+  const [term, setTerm] = useState('');
+  const needle = foldArabic(term);
+  const matches = needle ? stops.filter((s) => foldArabic(s.name).includes(needle)) : stops;
+  return (
+    <div className="space-y-2">
+      <div className="relative">
+        <Search className="pointer-events-none absolute inset-y-0 start-3 my-auto h-4 w-4 text-muted" aria-hidden />
+        <Input
+          value={term}
+          onChange={(e) => setTerm(e.target.value)}
+          placeholder={r.searchStop}
+          aria-label={r.searchStop}
+          className="ps-9"
+          data-testid="stop-search"
+        />
+      </div>
+      <ul role="listbox" aria-label={r.pickStop} className="max-h-60 overflow-y-auto rounded-lg border border-border" data-testid="stop-options">
+        {matches.length ? (
+          matches.map((s) => (
+            <li key={s.id} role="option" aria-selected={s.id === value}>
+              <button
+                type="button"
+                onClick={() => onChange(s.id)}
+                className={
+                  s.id === value
+                    ? 'flex min-h-touch w-full items-center justify-between gap-2 bg-brand-ink px-3 text-start text-white'
+                    : 'flex min-h-touch w-full items-center justify-between gap-2 px-3 text-start hover:bg-surface'
+                }
+              >
+                <span>{s.name}</span>
+                {s.id === value ? <Check className="h-4 w-4" aria-hidden /> : null}
+              </button>
+            </li>
+          ))
+        ) : (
+          <li className="px-3 py-3 text-sm text-muted">{r.noMatches}</li>
+        )}
+      </ul>
     </div>
   );
 }
@@ -297,15 +428,8 @@ function StopDialog({ universityId, route, stop, onClose, onSaved }: {
           />
         ) : (
           <form className="space-y-4" onSubmit={submit}>
-            <Field label={r.pickStop} htmlFor={ids.stop} hint={chosen ? (chosen.lat !== null ? `${r.coords}: ${chosen.lat}, ${chosen.lng}` : r.coordsMissing) : undefined}>
-              <Select id={ids.stop} value={stopId} onChange={(e) => setStopId(e.target.value)} data-testid="route-stop-select">
-                <option value="">{t.common.select}</option>
-                {options.map((s) => (
-                  <option key={s.id} value={s.id}>
-                    {s.name}
-                  </option>
-                ))}
-              </Select>
+            <Field label={r.pickStop} hint={chosen ? (chosen.lat !== null ? `${r.coords}: ${chosen.lat}, ${chosen.lng}` : r.coordsMissing) : undefined}>
+              <StopPicker stops={options} value={stopId} onChange={setStopId} />
             </Field>
             <Field label={r.departure} htmlFor={ids.time}>
               <Input id={ids.time} type="time" value={time} onChange={(e) => setTime(e.target.value)} />
