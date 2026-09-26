@@ -115,7 +115,7 @@ function TransportCard({ card }: { card: CardData }) {
       <div className="flex flex-1 flex-col p-[3mm] pt-[4mm]">
         <div className="mb-[1.5mm] flex items-center gap-[2mm]">
           {card.logo ? <img src={card.logo} alt="" className="h-[7mm] w-[7mm] object-contain" /> : null}
-          <img src="/icons/logo.svg" alt="" className="h-[7mm] w-auto" />
+          <img src="/icons/logo.png" alt="" className="h-[7mm] w-auto" />
           <span className="text-[2.4mm] font-bold leading-tight text-brand-ink">{t.cards.transportCard}</span>
         </div>
         <div className="flex flex-1 gap-[2.5mm]">

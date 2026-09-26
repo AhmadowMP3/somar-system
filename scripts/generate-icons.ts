@@ -1,34 +1,45 @@
 /**
- * Generates the PWA icons (regular, maskable, apple-touch, badge) from public/icons/logo.svg.
- * Usage: npx tsx scripts/generate-icons.ts
+ * Generates the app logo and PWA icons from the brand master `assets/somar_logo.png`
+ * (transparent PNG). Usage: npx tsx scripts/generate-icons.ts
  */
-import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import sharp from 'sharp';
 
+const SOURCE = resolve('assets/somar_logo.png');
 const dir = resolve('apps/web/public/icons');
-const logo = readFileSync(resolve(dir, 'logo.svg'));
 
-async function icon(size: number, file: string, padding: number, background: string) {
+/** Logo with its transparent margins removed. */
+async function trimmed(): Promise<Buffer> {
+  return sharp(SOURCE).trim({ threshold: 10 }).png().toBuffer();
+}
+
+async function square(art: Buffer, size: number, padding: number, background: string, file: string) {
   const inner = Math.round(size * (1 - padding * 2));
-  const art = await sharp(logo, { density: 512 }).resize(inner, inner, { fit: 'contain', background: '#00000000' }).png().toBuffer();
+  const fitted = await sharp(art).resize(inner, inner, { fit: 'contain', background: '#00000000' }).png().toBuffer();
   await sharp({ create: { width: size, height: size, channels: 4, background } })
-    .composite([{ input: art, gravity: 'center' }])
-    .png()
+    .composite([{ input: fitted, gravity: 'center' }])
+    .png({ compressionLevel: 9 })
     .toFile(resolve(dir, file));
 }
 
-async function badge() {
-  const svg = Buffer.from(
-    `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 72 72"><text x="36" y="50" text-anchor="middle" font-family="Arial Black, Arial" font-size="36" font-weight="900" fill="#fff">ST</text></svg>`,
-  );
-  await sharp(svg).resize(72, 72).png().toFile(resolve(dir, 'badge-72.png'));
+/** Monochrome white silhouette for the Android notification badge. */
+async function badge(art: Buffer) {
+  const size = 72;
+  const alpha = await sharp(art).resize(60, 60, { fit: 'contain', background: '#00000000' }).extractChannel(3).toBuffer();
+  const white = await sharp({ create: { width: 60, height: 60, channels: 3, background: '#FFFFFF' } }).joinChannel(alpha).png().toBuffer();
+  await sharp({ create: { width: size, height: size, channels: 4, background: '#00000000' } })
+    .composite([{ input: white, gravity: 'center' }])
+    .png()
+    .toFile(resolve(dir, 'badge-72.png'));
 }
 
-await icon(192, 'icon-192.png', 0.06, '#FFFFFF');
-await icon(512, 'icon-512.png', 0.06, '#FFFFFF');
-await icon(192, 'maskable-192.png', 0.18, '#FFFFFF');
-await icon(512, 'maskable-512.png', 0.18, '#FFFFFF');
-await icon(180, 'apple-touch-icon.png', 0.1, '#FFFFFF');
-await badge();
-console.log('icons generated in', dir);
+const art = await trimmed();
+await sharp(art).resize({ width: 360, withoutEnlargement: true }).png({ palette: true, quality: 95, compressionLevel: 9 }).toFile(resolve(dir, 'logo.png'));
+await square(art, 192, 0.08, '#FFFFFF', 'icon-192.png');
+await square(art, 512, 0.08, '#FFFFFF', 'icon-512.png');
+await square(art, 192, 0.2, '#FFFFFF', 'maskable-192.png');
+await square(art, 512, 0.2, '#FFFFFF', 'maskable-512.png');
+await square(art, 180, 0.1, '#FFFFFF', 'apple-touch-icon.png');
+await square(art, 48, 0.02, '#00000000', 'favicon.png');
+await badge(art);
+console.log('logo and icons generated in', dir);

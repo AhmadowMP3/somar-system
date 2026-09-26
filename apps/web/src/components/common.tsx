@@ -10,7 +10,7 @@ import { cn } from '@/lib/utils';
 import { Button, Select } from './ui/primitives';
 
 export function Logo({ className }: { className?: string }) {
-  return <img src="/icons/logo.svg" alt={t.brand} className={cn('h-9 w-auto', className)} />;
+  return <img src="/icons/logo.png" alt={t.brand} className={cn('h-9 w-auto', className)} />;
 }
 
 export function useOnline(): boolean {
