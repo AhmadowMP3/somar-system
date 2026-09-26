@@ -34,7 +34,8 @@
     "check:env": "tsx scripts/check-env.ts",
     "check:auth": "tsx scripts/check-auth.ts",
     "db:status": "tsx scripts/db-apply.ts --status",
-    "db:verify": "tsx scripts/db-verify.ts"
+    "db:verify": "tsx scripts/db-verify.ts",
+    "storage:setup": "tsx scripts/storage-setup.ts"
   },
   "devDependencies": {
     "@eslint/js": "^9.20.0",
