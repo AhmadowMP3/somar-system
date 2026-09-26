@@ -10,7 +10,8 @@ COPY packages/shared/package.json packages/shared/
 COPY apps/api/package.json apps/api/
 COPY apps/web/package.json apps/web/
 # --ignore-scripts skips the Supabase CLI / Playwright downloads; sharp and esbuild ship prebuilt binaries.
-RUN --mount=type=cache,target=/root/.npm npm ci --ignore-scripts --no-audit --no-fund
+# --include=dev keeps the build tools even when the platform injects NODE_ENV=production as a build argument.
+RUN --mount=type=cache,target=/root/.npm npm ci --include=dev --ignore-scripts --no-audit --no-fund
 
 COPY tsconfig.base.json ./
 COPY packages/shared packages/shared
