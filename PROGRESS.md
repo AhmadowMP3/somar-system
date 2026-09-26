@@ -14,7 +14,7 @@ Resume rule: on a new session read this file and continue from the first uncheck
 - [x] Gate 10 — Admin "Sajed" created (idempotent re-run), headless login on the live domain renders the dashboard with 0 console errors (2026-09-26 10:01 UTC)
 - [x] Gate 11 — Demo guard verified on production; migration 0005 (no-dash numbers) applied; university onboarded: 3 colleges, 39 areas, 3 packages (2026-09-26 10:20 UTC)
 - [ ] Gate 12 — Routes and stops — owner enters them in the UI; stop library added on request (migration 0006 applied to production)
-- [ ] Gate 13 — Import real students
+- [ ] Gate 13 — Import real students — CLI built and tested (dry-run / commit / idempotent re-run); waiting for the real file at assets/students.xlsx and for routes to be finished
 - [ ] Gate 14 — Live field test + operations docs
 
 ## Values chosen by the owner (no secrets)

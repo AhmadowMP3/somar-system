@@ -18,3 +18,8 @@ tests/e2e/.auth/
 import-preview.xlsx
 import-result.xlsx
 doctor-report.json
+# real student data never goes to git
+assets/*.xlsx
+assets/*.xls
+assets/*.csv
+import-*.xlsx
