@@ -9,7 +9,8 @@ import { supabase, unwrap } from '@/lib/supabase';
 import { cn } from '@/lib/utils';
 import { WithUniversity } from './common';
 
-type StatRow = { area_id: string | null; area_name: string | null; stop_id: string; stop_name: string; students: number };
+/** stop_id is null for a stop deleted since: it is then identified by the name saved with the choice. */
+type StatRow = { area_id: string | null; area_name: string | null; stop_id: string | null; stop_name: string; students: number };
 type ReturnRow = StatRow & { return_time: string };
 type DayRow = { service_date: string; students: number };
 type AreaGroup = { key: string; name: string; total: number; stops: StatRow[] };
@@ -153,7 +154,7 @@ function AreaCards({
             </div>
             <ul className="divide-y divide-border">
               {g.stops.map((stop) => (
-                <StopLine key={stop.stop_id} stop={stop} date={date} universityId={universityId} filter={filter} />
+                <StopLine key={stop.stop_id ?? `deleted:${stop.stop_name}`} stop={stop} date={date} universityId={universityId} filter={filter} />
               ))}
             </ul>
           </Card>
@@ -218,7 +219,9 @@ function StopLine({ stop, date, universityId, filter }: { stop: StatRow; date: s
         .select('student_id, students(full_name, transport_number)')
         .eq('university_id', universityId)
         .eq('service_date', date);
-      q = filter.kind === 'outbound' ? q.eq('stop_id', stop.stop_id) : q.eq('return_stop_id', stop.stop_id).eq('return_time', filter.time);
+      const [idCol, nameCol] = filter.kind === 'outbound' ? ['stop_id', 'stop_name'] : ['return_stop_id', 'return_stop_name'];
+      q = stop.stop_id ? q.eq(idCol, stop.stop_id) : q.is(idCol, null).eq(nameCol, stop.stop_name);
+      if (filter.kind === 'return') q = q.eq('return_time', filter.time);
       return unwrap(await q) as unknown as { student_id: string; students: { full_name: string; transport_number: string } | null }[];
     },
   });

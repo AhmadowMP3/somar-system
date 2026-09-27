@@ -1,4 +1,5 @@
 import {
+  ChevronDown,
   BarChart3,
   LocateFixed,
   Bell,
@@ -25,11 +26,12 @@ import {
   type LucideIcon,
 } from 'lucide-react';
 import { useState, type ReactNode } from 'react';
-import { NavLink, Outlet, useNavigate } from 'react-router-dom';
+import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { CreditFooter, InstallButton, Logo, NotificationBell, OfflineBanner, UniversityPicker } from '@/components/common';
 import { AppearanceMenu } from '@/components/AppearanceMenu';
 import { Button } from '@/components/ui/primitives';
 import { t } from '@/i18n/ar';
+import { safeStorage } from '@/lib/pwa';
 import { cn } from '@/lib/utils';
 import type { Permission } from '@somar/shared';
 import { useAuth } from './auth';
@@ -146,25 +148,30 @@ export function ScanLayout() {
   );
 }
 
+type NavSection = 'overview' | 'students' | 'transport' | 'field' | 'comms' | 'setup';
+
+/** Menu sections, in order; a section with no page the user may open is hidden. */
+const NAV_SECTIONS: NavSection[] = ['overview', 'students', 'transport', 'field', 'comms', 'setup'];
+
 /** Staff menu; each page needs its permission (`adminOnly` pages are for the admin alone). */
-export const ADMIN_NAV: (NavItem & { perm?: Permission; adminOnly?: boolean })[] = [
-  { to: '/admin', label: t.nav.dashboard, icon: LayoutDashboard, end: true, perm: 'dashboard' },
-  { to: '/admin/universities', label: t.nav.universities, icon: Building2, adminOnly: true },
-  { to: '/admin/colleges', label: t.nav.colleges, icon: GraduationCap, perm: 'org' },
-  { to: '/admin/areas', label: t.nav.areas, icon: MapPin, perm: 'org' },
-  { to: '/admin/packages', label: t.nav.adminPackages, icon: Package, perm: 'packages' },
-  { to: '/admin/stops', label: t.nav.stops, icon: MapPinned, perm: 'routes' },
-  { to: '/admin/routes', label: t.nav.adminRoutes, icon: Route, perm: 'routes' },
-  { to: '/admin/students', label: t.nav.students, icon: Users, perm: 'students' },
-  { to: '/admin/import', label: t.nav.import, icon: FileSpreadsheet, perm: 'import' },
-  { to: '/admin/supervisors', label: t.nav.supervisors, icon: BookUser, perm: 'supervisors' },
-  { to: '/admin/stats', label: t.nav.stats, icon: BarChart3, perm: 'stats' },
-  { to: '/admin/pickups', label: t.nav.pickups, icon: LocateFixed, perm: 'pickups' },
-  { to: '/admin/scans', label: t.nav.scans, icon: QrCode, perm: 'scans' },
-  { to: '/admin/notifications', label: t.nav.adminNotifications, icon: Bell, perm: 'notifications' },
-  { to: '/admin/settings', label: t.nav.settings, icon: Settings, perm: 'settings' },
-  { to: '/admin/audit', label: t.nav.audit, icon: ClipboardList, perm: 'audit' },
-  { to: '/scan', label: t.nav.scan, icon: ScanLine, perm: 'scan' },
+export const ADMIN_NAV: (NavItem & { perm?: Permission; adminOnly?: boolean; section: NavSection })[] = [
+  { section: 'overview', to: '/admin', label: t.nav.dashboard, icon: LayoutDashboard, end: true, perm: 'dashboard' },
+  { section: 'overview', to: '/admin/stats', label: t.nav.stats, icon: BarChart3, perm: 'stats' },
+  { section: 'overview', to: '/admin/pickups', label: t.nav.pickups, icon: LocateFixed, perm: 'pickups' },
+  { section: 'students', to: '/admin/students', label: t.nav.students, icon: Users, perm: 'students' },
+  { section: 'students', to: '/admin/import', label: t.nav.import, icon: FileSpreadsheet, perm: 'import' },
+  { section: 'students', to: '/admin/packages', label: t.nav.adminPackages, icon: Package, perm: 'packages' },
+  { section: 'transport', to: '/admin/routes', label: t.nav.adminRoutes, icon: Route, perm: 'routes' },
+  { section: 'transport', to: '/admin/stops', label: t.nav.stops, icon: MapPinned, perm: 'routes' },
+  { section: 'field', to: '/scan', label: t.nav.scan, icon: ScanLine, perm: 'scan' },
+  { section: 'field', to: '/admin/scans', label: t.nav.scans, icon: QrCode, perm: 'scans' },
+  { section: 'comms', to: '/admin/notifications', label: t.nav.adminNotifications, icon: Bell, perm: 'notifications' },
+  { section: 'setup', to: '/admin/universities', label: t.nav.universities, icon: Building2, adminOnly: true },
+  { section: 'setup', to: '/admin/colleges', label: t.nav.colleges, icon: GraduationCap, perm: 'org' },
+  { section: 'setup', to: '/admin/areas', label: t.nav.areas, icon: MapPin, perm: 'org' },
+  { section: 'setup', to: '/admin/supervisors', label: t.nav.supervisors, icon: BookUser, perm: 'supervisors' },
+  { section: 'setup', to: '/admin/settings', label: t.nav.settings, icon: Settings, perm: 'settings' },
+  { section: 'setup', to: '/admin/audit', label: t.nav.audit, icon: ClipboardList, perm: 'audit' },
 ];
 
 /** The staff pages this user may open, in menu order. */
@@ -174,30 +181,72 @@ export function useAdminNav() {
   return ADMIN_NAV.filter((item) => (item.adminOnly ? isAdmin : !item.perm || can(item.perm)));
 }
 
+const navStorage = safeStorage();
+const COLLAPSED_KEY = 'somar.nav.collapsed';
+
+/** Staff menu in titled sections; a section folds on click (remembered), the current page's section stays open. */
 function SideNav({ onNavigate }: { onNavigate?: () => void }) {
   const items = useAdminNav();
+  const location = useLocation();
+  const [collapsed, setCollapsed] = useState<Set<string>>(() => new Set((navStorage.get(COLLAPSED_KEY) ?? '').split(',').filter(Boolean)));
+  const toggle = (section: NavSection) =>
+    setCollapsed((prev) => {
+      const next = new Set(prev);
+      if (next.has(section)) next.delete(section);
+      else next.add(section);
+      navStorage.set(COLLAPSED_KEY, [...next].join(','));
+      return next;
+    });
+  const isCurrent = (item: (typeof items)[number]) =>
+    item.end ? location.pathname === item.to : location.pathname === item.to || location.pathname.startsWith(`${item.to}/`);
   return (
-    <nav aria-label={t.nav.menu}>
-      <ul className="space-y-1">
-        {items.map((item) => (
-          <li key={item.to}>
-            <NavLink
-              to={item.to}
-              end={item.end}
-              onClick={onNavigate}
-              className={({ isActive }) =>
-                cn(
-                  'flex min-h-touch items-center gap-3 rounded-lg px-3 text-sm font-semibold',
-                  isActive ? 'bg-brand-ink text-on-ink' : 'text-text hover:bg-surface',
-                )
-              }
+    <nav aria-label={t.nav.menu} className="space-y-4">
+      {NAV_SECTIONS.map((section) => {
+        const list = items.filter((i) => i.section === section);
+        if (!list.length) return null;
+        const hasCurrent = list.some(isCurrent);
+        const open = hasCurrent || !collapsed.has(section);
+        const id = `nav-${section}`;
+        return (
+          <section key={section} aria-labelledby={id}>
+            <button
+              type="button"
+              id={id}
+              aria-expanded={open}
+              aria-controls={`${id}-list`}
+              disabled={hasCurrent}
+              onClick={() => toggle(section)}
+              className="flex w-full items-center justify-between gap-2 rounded-md px-3 py-1.5 text-xs font-extrabold uppercase tracking-wide text-muted hover:text-text disabled:cursor-default disabled:hover:text-muted"
+              data-testid={id}
             >
-              <item.icon className="h-5 w-5" aria-hidden />
-              {item.label}
-            </NavLink>
-          </li>
-        ))}
-      </ul>
+              {t.nav.sections[section]}
+              {hasCurrent ? null : <ChevronDown className={cn('h-4 w-4 transition-transform', open && 'rotate-180')} aria-hidden />}
+            </button>
+            {open ? (
+              <ul id={`${id}-list`} className="mt-1 space-y-1">
+                {list.map((item) => (
+                  <li key={item.to}>
+                    <NavLink
+                      to={item.to}
+                      end={item.end}
+                      onClick={onNavigate}
+                      className={({ isActive }) =>
+                        cn(
+                          'flex min-h-touch items-center gap-3 rounded-lg px-3 text-base font-semibold',
+                          isActive ? 'bg-brand-ink text-on-ink' : 'text-text hover:bg-surface',
+                        )
+                      }
+                    >
+                      <item.icon className="h-5 w-5 shrink-0" aria-hidden />
+                      {item.label}
+                    </NavLink>
+                  </li>
+                ))}
+              </ul>
+            ) : null}
+          </section>
+        );
+      })}
     </nav>
   );
 }
@@ -237,7 +286,7 @@ export function AdminLayout() {
         </div>
       </header>
       <div className="flex">
-        <aside className="no-print sticky top-14 hidden h-[calc(100dvh-56px)] w-64 shrink-0 overflow-y-auto border-e border-border bg-bg p-3 lg:block">
+        <aside className="no-print sticky top-14 hidden h-[calc(100dvh-56px)] w-72 shrink-0 overflow-y-auto border-e border-border bg-bg p-3 [scrollbar-width:thin] lg:block">
           <SideNav />
         </aside>
         {open ? (

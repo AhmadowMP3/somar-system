@@ -1,10 +1,10 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { ExternalLink, LocateFixed, Pencil, Plus } from 'lucide-react';
+import { ExternalLink, LocateFixed, Pencil, Plus, Trash2 } from 'lucide-react';
 import { useEffect, useId, useState, type FormEvent } from 'react';
 import { Link } from 'react-router-dom';
 import { findPlusCode, parseMapsUrl } from '@somar/shared';
 import { useStopLibrary, type LibraryStop } from '@/features/student/StudentPages';
-import { Dialog, useToast } from '@/components/ui/overlay';
+import { ConfirmDialog, Dialog, useToast } from '@/components/ui/overlay';
 import { Badge, Button, Field, Input, Select, Switch } from '@/components/ui/primitives';
 import { DataList, EmptyState, PageHeader, QueryState } from '@/components/ui/states';
 import { t } from '@/i18n/ar';
@@ -24,6 +24,23 @@ function StopsBody({ universityId }: { universityId: string }) {
   const qc = useQueryClient();
   const toast = useToast();
   const [editing, setEditing] = useState<LibraryStop | 'new' | null>(null);
+  // deleting: first a plain confirmation; if the stop is on routes, a second one naming them
+  const [deleting, setDeleting] = useState<{ stop: LibraryStop; routes: string[] | null } | null>(null);
+  const remove = useMutation({
+    mutationFn: async ({ stop, confirmRoutes }: { stop: LibraryStop; confirmRoutes: boolean }) =>
+      unwrap(await supabase.rpc('delete_stop', { p_stop_id: stop.id, p_remove_from_routes: confirmRoutes })) as { deleted: boolean; routes: string[] },
+    onSuccess: (res, { stop }) => {
+      if (!res.deleted) {
+        setDeleting({ stop, routes: res.routes });
+        return;
+      }
+      toast.success(s.deleted(stop.name));
+      setDeleting(null);
+      void qc.invalidateQueries({ queryKey: ['stops', universityId] });
+      void qc.invalidateQueries({ queryKey: ['routes', universityId] });
+    },
+    onError: (e) => toast.error(errorMessage(e)),
+  });
   const toggle = useMutation({
     mutationFn: async ({ id, active }: { id: string; active: boolean }) =>
       unwrap(await supabase.from('stops').update({ is_active: active }).eq('id', id)),
@@ -101,10 +118,16 @@ function StopsBody({ universityId }: { universityId: string }) {
                 key: 'actions',
                 header: t.common.actions,
                 cell: (r) => (
-                  <Button size="sm" onClick={() => setEditing(r)}>
-                    <Pencil className="h-4 w-4" aria-hidden />
-                    {t.common.edit}
-                  </Button>
+                  <span className="flex flex-wrap gap-3">
+                    <Button size="sm" onClick={() => setEditing(r)}>
+                      <Pencil className="h-4 w-4" aria-hidden />
+                      {t.common.edit}
+                    </Button>
+                    <Button size="sm" variant="outline" className="text-danger" onClick={() => setDeleting({ stop: r, routes: null })} data-testid="stop-delete">
+                      <Trash2 className="h-4 w-4" aria-hidden />
+                      {t.common.delete}
+                    </Button>
+                  </span>
                 ),
               },
             ]}
@@ -135,6 +158,24 @@ function StopsBody({ universityId }: { universityId: string }) {
           ) : null}
         </div>
       </Dialog>
+      <ConfirmDialog
+        open={deleting !== null}
+        onOpenChange={(o) => (o ? undefined : setDeleting(null))}
+        title={deleting?.routes ? s.deleteInRoutesTitle : s.deleteTitle}
+        body={deleting ? (deleting.routes ? s.deleteInRoutes(deleting.stop.name) : s.deleteConfirm(deleting.stop.name)) : ''}
+        confirmLabel={deleting?.routes ? s.deleteFromRoutes : t.common.delete}
+        danger
+        busy={remove.isPending}
+        onConfirm={() => deleting && remove.mutate({ stop: deleting.stop, confirmRoutes: Boolean(deleting.routes) })}
+      >
+        {deleting?.routes ? (
+          <ul className="mt-3 list-disc space-y-1 ps-5 font-semibold" data-testid="stop-delete-routes">
+            {deleting.routes.map((name) => (
+              <li key={name}>{name}</li>
+            ))}
+          </ul>
+        ) : null}
+      </ConfirmDialog>
       {editing ? (
         <StopFormDialog universityId={universityId} stop={editing === 'new' ? null : editing} onClose={() => setEditing(null)} />
       ) : null}

@@ -550,14 +550,14 @@ test('16. supervisor permissions: chosen in a popup when created, edited later, 
   // the supervisor sees only the allowed pages; other pages send them back
   const sup = await secondUser(browser);
   await login(sup, code, STAFF_PASSWORD);
-  await expect(sup).toHaveURL(/\/admin\/stops$/);
+  await expect(sup).toHaveURL(/\/admin\/routes$/);
   await sup.getByRole('button', { name: 'القائمة' }).click();
   const drawer = sup.getByRole('dialog', { name: 'القائمة' });
   // exactly the chosen pages: stops + routes (the «routes» permission) and scanning
-  await expect(drawer.getByRole('link')).toHaveText(['نقاط الوقوف', 'الخطوط ونقاط الوقوف', 'مسح QR']);
+  await expect(drawer.getByRole('link')).toHaveText(['الخطوط ونقاط الوقوف', 'نقاط الوقوف', 'مسح QR']);
   await drawer.getByRole('button', { name: 'إغلاق' }).last().click();
   await sup.goto('/admin/students');
-  await expect(sup).toHaveURL(/\/admin\/stops$/);
+  await expect(sup).toHaveURL(/\/admin\/routes$/);
 
   // the admin adds «الطلاب» in the popup; the open session picks it up without a reload
   await page.locator('li').filter({ hasText: code }).getByTestId('edit-permissions').click();
@@ -734,4 +734,41 @@ test('20. stop locations: Google share links are resolved on the server; missing
   await expect(page.getByText(/تم تحديد موقع \d+ من أصل \d+ نقطة/)).toBeVisible();
   const { data: fixed } = await service.from('stops').select('lat, lng').eq('id', legacy?.id as string).single();
   expect(fixed).toEqual({ lat: 36.2233, lng: 37.1377 });
+});
+
+test('21. sidebar in sections (foldable, current section always open); stops can be deleted, also from their routes', async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await login(page, ADMIN_CODE, ADMIN_PASSWORD);
+  await expect(page).toHaveURL(/\/admin$/);
+  await pickUniversity(page, uni.id);
+  const aside = page.locator('aside');
+  for (const title of ['نظرة عامة', 'الطلاب والاشتراكات', 'الخطوط والنقل', 'المسح والمتابعة', 'التواصل', 'الإعداد والإدارة']) {
+    await expect(aside.getByRole('button', { name: title })).toBeVisible();
+  }
+  // fold «الإعداد والإدارة»; it stays folded after a reload
+  await aside.getByTestId('nav-setup').click();
+  await expect(aside.getByRole('link', { name: 'الكليات' })).toHaveCount(0);
+  await page.reload();
+  await expect(aside.getByRole('link', { name: 'الكليات' })).toHaveCount(0);
+  await aside.getByTestId('nav-setup').click();
+  await expect(aside.getByRole('link', { name: 'الكليات' })).toBeVisible();
+
+  const { data: unused } = await service.from('stops').insert({ university_id: uni.id, name: 'نقطة للحذف' }).select('id').single();
+  const { data: used } = await service.from('stops').insert({ university_id: uni.id, name: 'نقطة في خط للحذف' }).select('id').single();
+  const { data: route } = await service.from('routes').select('id').eq('university_id', uni.id).eq('name', 'خط الواجهة').single();
+  await service.from('route_stops').insert({ route_id: route?.id, stop_id: used?.id, seq: 50, departure_time: '07:50' });
+
+  await page.goto('/admin/stops');
+  const row = (name: string) => page.locator('tr').filter({ hasText: name });
+  await row('نقطة للحذف').getByTestId('stop-delete').click();
+  await page.getByRole('dialog').getByRole('button', { name: 'حذف', exact: true }).click();
+  await expect(page.getByText('تم حذف «نقطة للحذف»')).toBeVisible();
+  expect((await service.from('stops').select('id').eq('id', unused?.id as string)).data).toEqual([]);
+
+  await row('نقطة في خط للحذف').getByTestId('stop-delete').click();
+  await page.getByRole('dialog').getByRole('button', { name: 'حذف', exact: true }).click();
+  await expect(page.getByTestId('stop-delete-routes')).toContainText('خط الواجهة');
+  await page.getByRole('button', { name: 'حذف من الخطوط وحذف النقطة' }).click();
+  await expect(page.getByText('تم حذف «نقطة في خط للحذف»')).toBeVisible();
+  expect((await service.from('route_stops').select('id').eq('stop_id', used?.id as string)).data).toEqual([]);
 });

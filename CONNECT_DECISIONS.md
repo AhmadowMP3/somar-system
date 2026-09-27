@@ -86,3 +86,16 @@
     - «دوار الكرة», «ساحة الجامعة», «دوار عمر ابوريشة» carry the link of «جامع الرحمن» (copied by mistake).
     - Eight links hold only a place name: «المهندسين», «انصاري شرقي», «بنك الدم», «دوار 3000 شقة», «دوار الشفاء», «دوار الطب العربي», «دوار الموت», «مفرق العوارض». OpenStreetMap geocoding was tried and found unreliable (a hospital for a roundabout, a whole street for a junction), so no location is guessed for a bus stop.
     - Four stops have no link at all.
+64. **Deleting stops** (owner's request), migration `0015`: «حذف» on each stop in «نقاط الوقوف».
+    - **How it works**: `delete_stop` (staff with the routes permission, audited). A stop that is not on any route is deleted after one confirmation. A stop on routes asks a second time and names those routes; confirming removes it from them and deletes it.
+    - **Archive kept**: students' past choices of the stop keep its name (`pickup_choices.stop_name` / `return_stop_name`, kept up to date by a trigger; the links become empty on delete), so «أين سيقفون غداً» still shows old days correctly.
+    - **Earlier decision replaced**: #30 said a stop in use could only be deactivated.
+65. **Sectioned sidebar** (owner's request): the staff menu has six titled sections:
+    - نظرة عامة: dashboard, schedule stats, «أين سيقفون غداً»
+    - الطلاب والاشتراكات: students, import, packages
+    - الخطوط والنقل: routes, stops
+    - المسح والمتابعة: scan, scan log
+    - التواصل: notifications
+    - الإعداد والإدارة: universities, colleges, areas, supervisors, settings, audit
+
+    A section folds with a click and is remembered on the device. The section of the open page cannot be folded. Sections the user has no page in are hidden. Consequence: a supervisor with only the routes permission now lands on «الخطوط ونقاط الوقوف».
