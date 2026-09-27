@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Pencil, Plus } from 'lucide-react';
+import { Lock, Pencil, Plus } from 'lucide-react';
 import { useId, useState, type FormEvent } from 'react';
 import { Link } from 'react-router-dom';
 import { useScope, type University } from '@/app/auth';
@@ -21,20 +21,45 @@ function LogoThumb({ path }: { path: string | null }) {
 export function UniversitiesPage() {
   const isAdmin = useIsAdmin();
   const { universities, loading } = useScope();
-  const [editing, setEditing] = useState<University | 'new' | null>(null);
+  const [editing, setEditing] = useState<University | null>(null);
+  const [locked, setLocked] = useState(false);
   return (
     <div>
       <PageHeader
         title={t.nav.universities}
         actions={
           isAdmin ? (
-            <Button variant="secondary" onClick={() => setEditing('new')}>
-              <Plus className="h-4 w-4" aria-hidden />
+            <Button
+              variant="outline"
+              className="border-dashed text-muted"
+              onClick={() => setLocked(true)}
+              data-testid="add-university-locked"
+            >
+              <Lock className="h-4 w-4" aria-hidden />
               {t.university.add}
             </Button>
           ) : undefined
         }
       />
+      <Dialog
+        open={locked}
+        onOpenChange={setLocked}
+        title={
+          <span className="flex items-center gap-2">
+            <Lock className="h-5 w-5 text-brand" aria-hidden />
+            {t.university.lockedTitle}
+          </span>
+        }
+        footer={
+          <Button variant="secondary" onClick={() => setLocked(false)}>
+            {t.common.close}
+          </Button>
+        }
+      >
+        <p className="text-base font-semibold leading-8" data-testid="locked-message">
+          {t.university.lockedBody}
+        </p>
+      </Dialog>
       <QueryState
         query={{ isLoading: loading, isError: false, error: null, data: universities, refetch: () => undefined }}
         empty={(rows) => (rows.length ? null : <EmptyState title={t.university.noneYet} />)}
@@ -64,7 +89,7 @@ export function UniversitiesPage() {
           />
         )}
       </QueryState>
-      {editing ? <UniversityDialog university={editing === 'new' ? null : editing} onClose={() => setEditing(null)} /> : null}
+      {editing ? <UniversityDialog university={editing} onClose={() => setEditing(null)} /> : null}
     </div>
   );
 }

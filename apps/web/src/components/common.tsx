@@ -13,6 +13,15 @@ export function Logo({ className }: { className?: string }) {
   return <img src="/icons/logo.png" alt={t.brand} className={cn('h-9 w-auto', className)} />;
 }
 
+/** Vendor credit at the bottom of every screen; hidden when printing (cards, sheets). */
+export function CreditFooter({ className }: { className?: string }) {
+  return (
+    <footer dir="ltr" className={cn('no-print py-4 text-center text-xs text-muted', className)} data-testid="credit-footer">
+      {t.poweredBy}
+    </footer>
+  );
+}
+
 export function useOnline(): boolean {
   const [online, setOnline] = useState(() => (typeof navigator === 'undefined' ? true : navigator.onLine));
   useEffect(() => {

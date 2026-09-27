@@ -11,6 +11,8 @@ export const t = {
   appDescription: 'نظام النقل الجامعي من سومر تورز',
   listSeparator: '، ',
   currency: 'دولار',
+  /** Vendor credit shown at the bottom of every screen (kept in English on the owner's request). */
+  poweredBy: 'This System is made by Trinode',
   brand: 'سومر تورز',
 
   common: {
@@ -171,6 +173,8 @@ export const t = {
     logo: 'الشعار',
     uploadLogo: 'رفع الشعار',
     add: 'إضافة جامعة',
+    lockedTitle: 'ميزة مقفلة',
+    lockedBody: 'رقّي باقتك مع أحمد سباغ لتفتحلك',
     edit: 'تعديل الجامعة',
   },
 

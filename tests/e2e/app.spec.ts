@@ -163,11 +163,14 @@ test('6. a student opens a stop and the Google Maps link carries the stored URL'
   await expect(link).toHaveAttribute('href', uni.stopUrl);
 });
 
+const CREDIT = 'This System is made by Trinode';
+
 /** Latin words allowed in the UI: product/format names and data values (codes, numbers). */
 const ALLOWED_LATIN = new Set(['QR', 'PDF', 'Excel', 'xlsx', 'JPEG', 'PNG', 'WEBP', 'iPhone', 'Safari', 'OpenStreetMap']);
 
 async function englishWords(page: Page): Promise<string[]> {
-  const text = await page.locator('body').innerText();
+  // The vendor credit is intentionally English (owner's request); every other word must be Arabic.
+  const text = (await page.locator('body').innerText()).replaceAll(CREDIT, '');
   const words = text.match(/[A-Za-z][A-Za-z0-9-]*/g) ?? [];
   return [...new Set(words)].filter((w) => !ALLOWED_LATIN.has(w) && !/^[A-Z0-9]+(-[A-Z0-9]+)*$/.test(w));
 }
@@ -254,5 +257,20 @@ test('8. admin saves a stop once in the library and adds it to a route from the 
   // copy a stop to another route: a route that already has it is disabled
   await page.getByTestId('copy-stop').first().click();
   const targets = page.getByTestId('copy-targets');
-  await expect(targets.getByRole('button', { name: /\(نسخة\)/ })).toBeDisabled();
+  // the original and its copy hold the same stops, so the other route is listed but disabled
+  await expect(targets.getByRole('button')).toHaveCount(1);
+  await expect(targets.getByRole('button')).toBeDisabled();
+  await expect(targets).toContainText('موجودة في هذا الخط');
+});
+
+test('9. adding a university is locked with an upgrade message; the credit footer is on every screen', async ({ page }) => {
+  await page.goto('/login');
+  await expect(page.getByTestId('credit-footer')).toHaveText(CREDIT);
+  await login(page, ADMIN_CODE, ADMIN_PASSWORD);
+  await expect(page).toHaveURL(/\/admin$/);
+  await expect(page.getByTestId('credit-footer')).toHaveText(CREDIT);
+  await page.goto('/admin/universities');
+  await page.getByTestId('add-university-locked').click();
+  await expect(page.getByTestId('locked-message')).toHaveText('رقّي باقتك مع أحمد سباغ لتفتحلك');
+  await expect(page.getByLabel('اسم الجامعة')).toHaveCount(0);
 });

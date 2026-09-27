@@ -24,7 +24,7 @@ import {
 } from 'lucide-react';
 import { useState, type ReactNode } from 'react';
 import { NavLink, Outlet, useNavigate } from 'react-router-dom';
-import { InstallPrompt, Logo, NotificationBell, OfflineBanner, UniversityPicker } from '@/components/common';
+import { CreditFooter, InstallPrompt, Logo, NotificationBell, OfflineBanner, UniversityPicker } from '@/components/common';
 import { Button } from '@/components/ui/primitives';
 import { t } from '@/i18n/ar';
 import { cn } from '@/lib/utils';
@@ -89,6 +89,7 @@ export function StudentLayout() {
       <main className="mx-auto max-w-2xl px-4 py-4">
         <InstallPrompt />
         <Outlet />
+        <CreditFooter />
       </main>
       <BottomTabs items={items} />
     </div>
@@ -130,6 +131,7 @@ export function ScanLayout() {
       <main className="mx-auto max-w-2xl px-4 py-4">
         <InstallPrompt />
         <Outlet />
+        <CreditFooter />
       </main>
       <BottomTabs items={items} />
     </div>
@@ -234,6 +236,7 @@ export function AdminLayout() {
         ) : null}
         <main className="min-w-0 flex-1 p-4 lg:p-6">
           <Outlet />
+          <CreditFooter className="mt-6" />
         </main>
       </div>
     </div>
