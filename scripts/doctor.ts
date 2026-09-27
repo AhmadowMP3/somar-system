@@ -265,7 +265,42 @@ async function scanSmokeTest() {
     expect('يوم خارج الدوام مرفوض', !s4.ok && s4.code === 'OFFDAY_BLOCKED', s4.code);
     expect('بلا رصيد مرفوض', !s5.ok && s5.code === 'NO_BALANCE', s5.code);
     expect('فترة منع التكرار', s6.ok && !s7.ok && s7.code === 'COOLDOWN', s7.code);
+
+    // realtime: a signed-in student is told about a route added elsewhere, within seconds
+    const started = Date.now();
+    const heard = await new Promise<string>((resolve) => {
+      const timeout = setTimeout(() => resolve('timeout'), 15_000);
+      const channel = asA
+        .channel(`doctor-${tag}`)
+        .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'routes' }, (payload) => {
+          if ((payload.new as { university_id?: string }).university_id !== uni.id) return;
+          clearTimeout(timeout);
+          void asA.removeChannel(channel);
+          resolve('event');
+        })
+        .subscribe((status) => {
+          if (status === 'SUBSCRIBED') {
+            // give the server a moment to register the subscription before the change
+            setTimeout(() => {
+              // query builders only run when awaited/then-ed
+              void admin
+                .from('routes')
+                .insert({ university_id: uni.id, name: 'خط فحص مباشر', direction: 'outbound', departure_time: '07:00' })
+                .then(({ error }) => error && resolve(`insert: ${error.message}`));
+            }, 2000);
+          } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
+            clearTimeout(timeout);
+            resolve(status);
+          }
+        });
+    });
+    r.add('realtime-live', 'التحديث المباشر يصل للمستخدم', heard === 'event' ? 'PASS' : 'FAIL',
+      heard === 'event' ? `وصل خلال ${((Date.now() - started) / 1000).toFixed(1)} ث` : heard,
+      'تأكد أن خدمة realtime تعمل في Supabase على Coolify وأن الترحيل 0013 مطبّق');
+    asA.realtime.disconnect();
+    sup.realtime.disconnect();
   } finally {
+    admin.realtime.disconnect();
     for (const id of userIds) await admin.auth.admin.deleteUser(id);
     if (universityId) {
       await admin.from('audit_log').delete().eq('university_id', universityId);
