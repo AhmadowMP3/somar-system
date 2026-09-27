@@ -694,3 +694,44 @@ test('19. appearance: dark theme and large text are chosen once and stay after r
   const bg = await badge.evaluate((el) => getComputedStyle(el).backgroundColor);
   expect(bg).not.toBe('rgba(0, 0, 0, 0)');
 });
+
+test('20. stop locations: Google share links are resolved on the server; missing locations are filled in one click', async ({ page }) => {
+  // the share link would be followed to Google by the server; the answer is simulated here
+  await page.route('**/api/maps/resolve', async (route) => {
+    const { url } = route.request().postDataJSON() as { url: string };
+    if (url.includes('maps.app.goo.gl/E2E')) await route.fulfill({ json: { lat: 36.2101, lng: 37.1501 } });
+    else await route.continue();
+  });
+  const { data: legacy } = await service
+    .from('stops')
+    .insert({ university_id: uni.id, name: 'نقطة قديمة بلا موقع', maps_url: 'https://www.google.com/maps/search/36.2233,+37.1377' })
+    .select('id')
+    .single();
+  await login(page, ADMIN_CODE, ADMIN_PASSWORD);
+  await expect(page).toHaveURL(/\/admin$/);
+  await pickUniversity(page, uni.id);
+  await page.goto('/admin/stops');
+
+  // a share link from the Google Maps app
+  await page.getByTestId('stop-add').click();
+  await page.getByTestId('stop-name').fill('نقطة من رابط مشاركة');
+  await page.getByTestId('stop-url').fill('https://maps.app.goo.gl/E2EShare');
+  await expect(page.getByTestId('stop-coords')).toContainText('36.2101, 37.1501');
+  await page.getByTestId('stop-save').click();
+  await expect(page.getByRole('dialog')).toHaveCount(0);
+  const { data: shared } = await service.from('stops').select('lat, lng').eq('university_id', uni.id).eq('name', 'نقطة من رابط مشاركة').single();
+  expect(shared).toEqual({ lat: 36.2101, lng: 37.1501 });
+
+  // plain coordinates are accepted too
+  await page.getByTestId('stop-add').click();
+  await page.getByTestId('stop-name').fill('نقطة بإحداثيات');
+  await page.getByTestId('stop-url').fill('36.2011, 37.1422');
+  await expect(page.getByTestId('stop-coords')).toContainText('36.2011, 37.1422');
+  await page.keyboard.press('Escape');
+
+  // stops saved earlier without a location are fixed in one click
+  await page.getByTestId('resolve-missing').click();
+  await expect(page.getByText(/تم تحديد موقع \d+ من أصل \d+ نقطة/)).toBeVisible();
+  const { data: fixed } = await service.from('stops').select('lat, lng').eq('id', legacy?.id as string).single();
+  expect(fixed).toEqual({ lat: 36.2233, lng: 37.1377 });
+});

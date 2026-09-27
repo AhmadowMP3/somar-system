@@ -33,30 +33,72 @@ export function isPasswordValid(password: string, confirm: string | null, minLen
   return checkPassword(password, confirm, minLength).every((r) => r.ok);
 }
 
-/** Extract coordinates from a Google Maps link (`@lat,lng`, `?q=lat,lng`, `!3dlat!4dlng`). */
-export function parseMapsUrl(url: string | null | undefined): { lat: number; lng: number } | null {
-  if (!url) return null;
-  let decoded = url;
-  try {
-    decoded = decodeURIComponent(url);
-  } catch {
-    decoded = url;
-  }
-  const num = '(-?\\d{1,3}(?:\\.\\d+)?)';
-  const patterns = [
-    new RegExp(`!3d${num}!4d${num}`),
-    new RegExp(`[?&](?:q|query|ll|destination|center)=${num},\\s*${num}`),
-    new RegExp(`@${num},${num}`),
-  ];
+export type LatLng = { lat: number; lng: number };
+
+const NUM = '(-?\\d{1,3}(?:\\.\\d+)?)';
+
+function firstMatch(text: string, patterns: RegExp[], order: 'latlng' | 'lnglat' = 'latlng'): LatLng | null {
   for (const re of patterns) {
-    const m = re.exec(decoded);
-    if (m) {
-      const lat = Number(m[1]);
-      const lng = Number(m[2]);
-      if (Math.abs(lat) <= 90 && Math.abs(lng) <= 180) return { lat, lng };
-    }
+    const m = re.exec(text);
+    if (!m) continue;
+    const a = Number(m[1]);
+    const b = Number(m[2]);
+    const [lat, lng] = order === 'latlng' ? [a, b] : [b, a];
+    if (Math.abs(lat) <= 90 && Math.abs(lng) <= 180 && !(lat === 0 && lng === 0)) return { lat, lng };
   }
   return null;
+}
+
+function safeDecode(s: string): string {
+  try {
+    return decodeURIComponent(s.replace(/\+/g, ' '));
+  } catch {
+    return s;
+  }
+}
+
+/**
+ * Extract coordinates from a Google Maps link. The exact place (`!3d…!4d…`) wins over query
+ * forms (`?q=`, `/search/lat,lng`, `geo:`, plain «lat, lng») and those over the viewport centre
+ * (`@lat,lng`). Short share links (maps.app.goo.gl, goo.gl/maps) carry no coordinates: see isShortMapsLink.
+ */
+export function parseMapsUrl(url: string | null | undefined): LatLng | null {
+  if (!url) return null;
+  const decoded = safeDecode(url.trim());
+  return firstMatch(decoded, [
+    new RegExp(`!3d${NUM}!4d${NUM}`),
+    new RegExp(`[?&](?:q|query|ll|sll|destination|daddr|center|cbll)=(?:loc:)?\\s*${NUM},\\s*${NUM}`),
+    new RegExp(`/(?:search|place|dir)/(?:[^/?]*/)*?${NUM},\\s*${NUM}`),
+    new RegExp(`^geo:${NUM},${NUM}`),
+    // plain coordinates copied from Google Maps: «36.2021, 37.1343»
+    new RegExp(`^\\s*${NUM}\\s*[,،]\\s*${NUM}\\s*$`),
+    new RegExp(`@${NUM},${NUM}`),
+  ]);
+}
+
+/** Share links that only redirect to the real map link (the app's «Share» button makes these). */
+export function isShortMapsLink(url: string | null | undefined): boolean {
+  if (!url) return false;
+  try {
+    const u = new URL(url.trim());
+    return u.hostname === 'maps.app.goo.gl' || (u.hostname === 'goo.gl' && u.pathname.startsWith('/maps')) || u.hostname === 'g.co';
+  } catch {
+    return false;
+  }
+}
+
+/** Coordinates inside a Google Maps page, when its final address still has none (last resort). */
+export function coordsFromMapsHtml(html: string): LatLng | null {
+  const text = html.replace(/&amp;/g, '&');
+  return (
+    firstMatch(text, [
+      new RegExp(`center=${NUM}(?:%2C|,)${NUM}`),
+      new RegExp(`!3d${NUM}!4d${NUM}`),
+      new RegExp(`/@${NUM},${NUM}`),
+    ]) ??
+    // window.APP_INITIALIZATION_STATE=[[[altitude,lng,lat] …
+    firstMatch(text, [new RegExp(`APP_INITIALIZATION_STATE=\\[\\[\\[-?\\d+(?:\\.\\d+)?,${NUM},${NUM}\\]`)], 'lnglat')
+  );
 }
 
 /** QR payload printed on the card. */

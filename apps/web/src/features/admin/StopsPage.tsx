@@ -1,6 +1,6 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { ExternalLink, Pencil, Plus } from 'lucide-react';
-import { useId, useState, type FormEvent } from 'react';
+import { ExternalLink, LocateFixed, Pencil, Plus } from 'lucide-react';
+import { useEffect, useId, useState, type FormEvent } from 'react';
 import { Link } from 'react-router-dom';
 import { parseMapsUrl } from '@somar/shared';
 import { useStopLibrary, type LibraryStop } from '@/features/student/StudentPages';
@@ -8,6 +8,7 @@ import { Dialog, useToast } from '@/components/ui/overlay';
 import { Badge, Button, Field, Input, Select, Switch } from '@/components/ui/primitives';
 import { DataList, EmptyState, PageHeader, QueryState } from '@/components/ui/states';
 import { t } from '@/i18n/ar';
+import { api } from '@/lib/api';
 import { errorMessage } from '@/lib/errors';
 import { supabase, unwrap } from '@/lib/supabase';
 import { useAreas, WithUniversity } from './common';
@@ -30,6 +31,18 @@ function StopsBody({ universityId }: { universityId: string }) {
     onError: (e) => toast.error(errorMessage(e)),
   });
   const areaName = (id: string | null) => areas.data?.find((a) => a.id === id)?.name ?? t.common.none;
+  const missing = (query.data ?? []).filter((x) => x.maps_url && (x.lat == null || x.lng == null)).length;
+  const [failed, setFailed] = useState<string[] | null>(null);
+  const resolveAll = useMutation({
+    mutationFn: () => api.post<{ checked: number; fixed: number; failed: string[] }>('/stops/resolve-missing', { university_id: universityId }),
+    onSuccess: (res) => {
+      toast.success(s.resolvedCount(res.fixed, res.checked));
+      if (res.failed.length) setFailed(res.failed);
+      void qc.invalidateQueries({ queryKey: ['stops', universityId] });
+      void qc.invalidateQueries({ queryKey: ['routes', universityId] });
+    },
+    onError: (e) => toast.error(errorMessage(e)),
+  });
   return (
     <div>
       <PageHeader
@@ -37,6 +50,12 @@ function StopsBody({ universityId }: { universityId: string }) {
         subtitle={s.intro}
         actions={
           <>
+            {missing ? (
+              <Button variant="primary" disabled={resolveAll.isPending} onClick={() => resolveAll.mutate()} data-testid="resolve-missing">
+                <LocateFixed className="h-4 w-4" aria-hidden />
+                {resolveAll.isPending ? s.resolving : s.resolveMissing(missing)}
+              </Button>
+            ) : null}
             <Button asChild>
               <Link to="/admin/routes">{t.nav.adminRoutes}</Link>
             </Button>
@@ -91,6 +110,13 @@ function StopsBody({ universityId }: { universityId: string }) {
           />
         )}
       </QueryState>
+      <Dialog open={failed !== null} onOpenChange={(o) => (o ? undefined : setFailed(null))} title={s.failedTitle} description={s.failedHint}>
+        <ul className="list-disc space-y-1 ps-5" data-testid="resolve-failed">
+          {(failed ?? []).map((name) => (
+            <li key={name}>{name}</li>
+          ))}
+        </ul>
+      </Dialog>
       {editing ? (
         <StopFormDialog universityId={universityId} stop={editing === 'new' ? null : editing} onClose={() => setEditing(null)} />
       ) : null}
@@ -106,15 +132,39 @@ function StopFormDialog({ universityId, stop, onClose }: { universityId: string;
   const areas = useAreas(universityId);
   const [form, setForm] = useState({ name: stop?.name ?? '', maps_url: stop?.maps_url ?? '', area_id: stop?.area_id ?? '' });
   const ids = { name: useId(), url: useId(), area: useId() };
-  const coords = parseMapsUrl(form.maps_url);
+  const url = form.maps_url.trim();
+  const unchanged = Boolean(stop && url === (stop.maps_url ?? '') && stop.lat != null && stop.lng != null);
+  const parsed = parseMapsUrl(url);
+  // share links (maps.app.goo.gl …) have no coordinates in them: the server follows them to the full address
+  const needsServer = Boolean(url && !parsed && !unchanged && /^https?:\/\//i.test(url));
+  const [resolved, setResolved] = useState<{ url: string; lat: number; lng: number } | { url: string; failed: true } | null>(null);
+  useEffect(() => {
+    if (!needsServer) return;
+    let cancelled = false;
+    const timer = setTimeout(() => {
+      api
+        .post<{ lat: number; lng: number }>('/maps/resolve', { url })
+        .then((c) => !cancelled && setResolved({ url, ...c }))
+        .catch(() => !cancelled && setResolved({ url, failed: true }));
+    }, 500);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [url, needsServer]);
+  const fromServer = resolved && resolved.url === url && !('failed' in resolved) ? resolved : null;
+  const coords = unchanged && stop ? { lat: Number(stop.lat), lng: Number(stop.lng) } : (parsed ?? fromServer);
+  const resolving = needsServer && (!resolved || resolved.url !== url);
   const save = useMutation({
     mutationFn: async () => {
+      let found = coords;
+      if (!found && needsServer) found = await api.post<{ lat: number; lng: number }>('/maps/resolve', { url }).catch(() => null);
       const row = {
         university_id: universityId,
         name: form.name.trim(),
-        maps_url: form.maps_url.trim() || null,
-        lat: coords?.lat ?? null,
-        lng: coords?.lng ?? null,
+        maps_url: url || null,
+        lat: found?.lat ?? null,
+        lng: found?.lng ?? null,
         area_id: form.area_id || null,
       };
       if (stop) unwrap(await supabase.from('stops').update(row).eq('id', stop.id));
@@ -138,7 +188,21 @@ function StopFormDialog({ universityId, stop, onClose }: { universityId: string;
         <Field label={r.stopName} htmlFor={ids.name}>
           <Input id={ids.name} value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} required data-testid="stop-name" />
         </Field>
-        <Field label={r.mapsUrl} htmlFor={ids.url} hint={form.maps_url ? (coords ? `${r.coords}: ${coords.lat}, ${coords.lng}` : r.coordsMissing) : r.mapsHint}>
+        <Field label={r.mapsUrl} htmlFor={ids.url} hint={
+            url ? (
+              coords ? (
+                <span data-testid="stop-coords">{`${r.coords}: ${coords.lat}, ${coords.lng}`}</span>
+              ) : resolving ? (
+                s.resolvingOne
+              ) : (
+                <span className="text-warning" data-testid="stop-coords-missing">
+                  {s.coordsNotFound}
+                </span>
+              )
+            ) : (
+              r.mapsHint
+            )
+          }>
           <Input id={ids.url} dir="ltr" className="text-start" value={form.maps_url} onChange={(e) => setForm({ ...form, maps_url: e.target.value })} data-testid="stop-url" />
         </Field>
         <Field label={r.area} htmlFor={ids.area}>

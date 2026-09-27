@@ -67,3 +67,9 @@
     - **Spacing**: gaps between buttons in every button row and dialog footer grew from 8 to 12 px.
     - **Overlaps fixed**: dates, times, links and phone numbers always read left-to-right, so «2026-09-27» is no longer cut by the calendar icon. Long stop names wrap instead of pushing the time and the action buttons.
     - **Also fixed**: the colour tokens are now RGB channels. Before, every tinted background (e.g. `bg-success/15` on badges and alerts) was silently missing from the built CSS.
+62. **Stop locations from Google share links** (owner's report: «لم يتم استخراج الإحداثيات من الرابط» on every stop, so nothing showed on the map):
+    - **Cause**: links made with the Google Maps app's «Share» button (`maps.app.goo.gl/…`) contain no coordinates; they only redirect to the full link. The stop form read coordinates from the link text alone.
+    - **Fix, on the server**: `POST /api/maps/resolve` follows such a link hop by hop, including Google's consent page, to the full address and reads the coordinates. As a last resort it reads them from the Maps page itself. For safety it only ever contacts Google hosts, never arbitrary addresses.
+    - **More formats**: the parser now also reads `/maps/search/lat,lng`, `/maps/place/lat,lng`, `?q=loc:`, `geo:` and plain «lat, lng» pasted from Google Maps, and prefers the exact place over the map centre.
+    - **Stop form**: resolves share links while typing and shows the coordinates found. It no longer wipes an existing location when a stop is saved with its link unchanged.
+    - **One-click fix**: «استخراج المواقع الناقصة (N)» fills in every stop that has a link but no location (`POST /api/stops/resolve-missing`, audited). Stops that still cannot be located are listed with instructions.

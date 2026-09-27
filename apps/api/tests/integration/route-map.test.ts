@@ -106,6 +106,35 @@ describe('route map path', () => {
     expect(requests).toBe(2);
   });
 
+  it('fills in missing stop locations from their links, for staff only', async () => {
+    const staffToken = await accessToken((await createStaff(fx, 'university_supervisor')).client);
+    const { data } = await service
+      .from('stops')
+      .insert([
+        // saved before the link parser knew this form: link has coordinates, the stop has none
+        { university_id: fx.universityId, name: 'بحث', maps_url: 'https://www.google.com/maps/search/36.2021,+37.1343' },
+        { university_id: fx.universityId, name: 'ليس خرائط', maps_url: 'https://example.com/somewhere' },
+      ])
+      .select('id, name');
+    const post = (url: string, token: string, payload: object) =>
+      app.inject({ method: 'POST', url, headers: { authorization: `Bearer ${token}` }, payload });
+
+    expect((await post('/api/stops/resolve-missing', studentToken, { university_id: fx.universityId })).statusCode).toBe(403);
+    const res = await post('/api/stops/resolve-missing', staffToken, { university_id: fx.universityId });
+    expect(res.statusCode).toBe(200);
+    const body = res.json() as { checked: number; fixed: number; failed: string[] };
+    expect(body.fixed).toBe(1);
+    expect(body.failed).toEqual(['ليس خرائط']);
+    const fixedStop = (data ?? []).find((s) => s.name === 'بحث');
+    const { data: after } = await service.from('stops').select('lat, lng').eq('id', fixedStop?.id as string).single();
+    expect(after).toEqual({ lat: 36.2021, lng: 37.1343 });
+
+    const one = await post('/api/maps/resolve', staffToken, { url: '36.19, 37.15' });
+    expect(one.json()).toEqual({ lat: 36.19, lng: 37.15 });
+    expect((await post('/api/maps/resolve', staffToken, { url: 'https://example.com/x' })).statusCode).toBe(422);
+    expect((await post('/api/stops/resolve-missing', foreignToken, { university_id: fx.universityId })).statusCode).toBe(403);
+  });
+
   it('is only for users of the route university', async () => {
     expect((await get(foreignToken)).statusCode).toBe(403);
     const res = await app.inject({ method: 'GET', url: `/api/routes/${routeId}/path` });

@@ -8,6 +8,8 @@ import {
   isoWeekday,
   loginCodeToEmail,
   matchHeaders,
+  coordsFromMapsHtml,
+  isShortMapsLink,
   parseMapsUrl,
   parseQrPayload,
   qrPayload,
@@ -102,6 +104,30 @@ describe('maps links and QR payloads', () => {
     expect(parseMapsUrl('https://www.google.com/maps/place/X/@36.21,37.15,17z')).toEqual({ lat: 36.21, lng: 37.15 });
     expect(parseMapsUrl('https://www.google.com/maps/place/X/data=!3d36.2!4d37.1')).toEqual({ lat: 36.2, lng: 37.1 });
     expect(parseMapsUrl('https://maps.app.goo.gl/abc')).toBeNull();
+    // more Google formats
+    expect(parseMapsUrl('https://www.google.com/maps/search/36.2021,+37.1343?entry=tts')).toEqual({ lat: 36.2021, lng: 37.1343 });
+    expect(parseMapsUrl('https://www.google.com/maps/place/36.2021,37.1343')).toEqual({ lat: 36.2021, lng: 37.1343 });
+    expect(parseMapsUrl('https://maps.google.com/maps?q=loc:36.2,37.1&z=15')).toEqual({ lat: 36.2, lng: 37.1 });
+    expect(parseMapsUrl('https://www.google.com/maps?q=36.2021%2C37.1343')).toEqual({ lat: 36.2021, lng: 37.1343 });
+    expect(parseMapsUrl('geo:36.2,37.1?z=17')).toEqual({ lat: 36.2, lng: 37.1 });
+    expect(parseMapsUrl(' 36.2021, 37.1343 ')).toEqual({ lat: 36.2021, lng: 37.1343 });
+    expect(parseMapsUrl('36.2021،37.1343')).toEqual({ lat: 36.2021, lng: 37.1343 });
+    // the exact place wins over the map centre
+    expect(parseMapsUrl('https://www.google.com/maps/place/X/@36.3,37.3,17z/data=!3m1!4b1!4m6!3m5!8m2!3d36.2021!4d37.1343')).toEqual({
+      lat: 36.2021,
+      lng: 37.1343,
+    });
+  });
+  it('recognises short share links and reads coordinates from a Maps page', () => {
+    expect(isShortMapsLink('https://maps.app.goo.gl/AbCdEf123')).toBe(true);
+    expect(isShortMapsLink('https://goo.gl/maps/xyz')).toBe(true);
+    expect(isShortMapsLink('https://www.google.com/maps/@36,37,15z')).toBe(false);
+    expect(coordsFromMapsHtml('<meta content="https://maps.google.com/maps/api/staticmap?center=36.2021%2C37.1343&amp;zoom=15">')).toEqual({
+      lat: 36.2021,
+      lng: 37.1343,
+    });
+    expect(coordsFromMapsHtml('window.APP_INITIALIZATION_STATE=[[[1545.2,37.1343,36.2021],[0,0,0]')).toEqual({ lat: 36.2021, lng: 37.1343 });
+    expect(coordsFromMapsHtml('<html>nothing here</html>')).toBeNull();
   });
   it('round-trips the QR payload', () => {
     const token = '3f2b1c9e-8d7a-4b6c-9e5f-1a2b3c4d5e6f';

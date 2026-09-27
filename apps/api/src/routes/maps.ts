@@ -1,8 +1,10 @@
 import { createHash } from 'node:crypto';
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
-import { authOf, type AppContext } from '../lib/auth.js';
+import { writeAudit } from '../lib/audit.js';
+import { assertPermission, assertUniversityScope, authOf, clientIp, type AppContext } from '../lib/auth.js';
 import { ApiError, forbidden, notFound } from '../lib/errors.js';
+import { resolveMapsLocation } from '../services/maps-links.js';
 
 type Point = [number, number]; // [lat, lng]
 type PathResult = { source: 'road' | 'straight'; points: Point[]; stops: number };
@@ -29,6 +31,53 @@ async function roadPath(baseUrl: string, stops: Point[], userAgent: string): Pro
 export async function mapRoutes(app: FastifyInstance, ctx: AppContext) {
   const { db, cfg, requireRole } = ctx;
   const anyUser = requireRole();
+  const staff = requireRole('admin', 'university_supervisor');
+
+  /** Coordinates for one Google Maps link (share links are followed to the full address). */
+  app.post('/api/maps/resolve', { preHandler: staff }, async (request) => {
+    assertPermission(authOf(request), 'routes');
+    const { url } = z.object({ url: z.string().trim().min(8).max(2000) }).parse(request.body);
+    const found = await resolveMapsLocation(url);
+    if (!found) throw new ApiError(422, 'COORDS_NOT_FOUND');
+    return { lat: found.lat, lng: found.lng };
+  });
+
+  /** Fills in the coordinates of every stop of a university that has a link but no location yet. */
+  app.post('/api/stops/resolve-missing', { preHandler: staff }, async (request) => {
+    const auth = authOf(request);
+    assertPermission(auth, 'routes');
+    const { university_id } = z.object({ university_id: z.string().uuid() }).parse(request.body);
+    assertUniversityScope(auth, university_id);
+    const { data: stops, error } = await db
+      .from('stops')
+      .select('id, name, maps_url')
+      .eq('university_id', university_id)
+      .not('maps_url', 'is', null)
+      .or('lat.is.null,lng.is.null');
+    if (error) throw new ApiError(500, 'INTERNAL');
+    const failed: string[] = [];
+    let fixed = 0;
+    for (const stop of stops ?? []) {
+      const found = await resolveMapsLocation(stop.maps_url as string);
+      if (!found) {
+        failed.push(stop.name as string);
+        continue;
+      }
+      const { error: upErr } = await db.from('stops').update({ lat: found.lat, lng: found.lng }).eq('id', stop.id);
+      if (upErr) failed.push(stop.name as string);
+      else fixed += 1;
+    }
+    await writeAudit(db, {
+      actor: auth.profile.id,
+      universityId: university_id,
+      action: 'stops.resolve_locations',
+      entity: 'stops',
+      entityId: null,
+      after: { checked: stops?.length ?? 0, fixed, failed },
+      ip: clientIp(request),
+    });
+    return { checked: stops?.length ?? 0, fixed, failed };
+  });
   // one computation per route+stops at a time, even when many phones open the map together
   const inFlight = new Map<string, Promise<PathResult>>();
 
