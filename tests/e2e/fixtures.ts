@@ -2,6 +2,7 @@ import { randomBytes } from 'node:crypto';
 import { resolve } from 'node:path';
 import { createClient } from '@supabase/supabase-js';
 import { config as loadEnv } from 'dotenv';
+import pg from 'pg';
 import sharp from 'sharp';
 import { loadConfig } from '../../apps/api/src/config.js';
 import { provisionStaff, provisionStudent } from '../../apps/api/src/services/provisioning.js';
@@ -152,4 +153,21 @@ export async function destroyE2EUniversities() {
 
 export async function jpegFile(): Promise<Buffer> {
   return sharp({ create: { width: 900, height: 1200, channels: 3, background: '#6B4E71' } }).jpeg().toBuffer();
+}
+
+/** Freeze the database clock at a Damascus wall time (e.g. '2026-10-05 19:00'); pass null to release it. */
+export async function freezeClock(damascusLocal: string | null) {
+  const client = new pg.Client({ connectionString: process.env.DATABASE_URL });
+  await client.connect();
+  try {
+    if (damascusLocal === null) await client.query('delete from private.test_clock');
+    else
+      await client.query(
+        `insert into private.test_clock (id, frozen_at) values (1, ($1::timestamp at time zone 'Asia/Damascus'))
+         on conflict (id) do update set frozen_at = excluded.frozen_at`,
+        [damascusLocal],
+      );
+  } finally {
+    await client.end();
+  }
 }

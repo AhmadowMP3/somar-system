@@ -1,5 +1,6 @@
 import {
   BarChart3,
+  LocateFixed,
   Bell,
   BookUser,
   Building2,
@@ -153,6 +154,7 @@ const ADMIN_NAV: NavItem[] = [
   { to: '/admin/import', label: t.nav.import, icon: FileSpreadsheet },
   { to: '/admin/supervisors', label: t.nav.supervisors, icon: BookUser },
   { to: '/admin/stats', label: t.nav.stats, icon: BarChart3 },
+  { to: '/admin/pickups', label: t.nav.pickups, icon: LocateFixed },
   { to: '/admin/scans', label: t.nav.scans, icon: QrCode },
   { to: '/admin/notifications', label: t.nav.adminNotifications, icon: Bell },
   { to: '/admin/settings', label: t.nav.settings, icon: Settings },

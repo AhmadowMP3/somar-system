@@ -7,7 +7,8 @@ import type { PushService } from '../services/push.js';
  * Scheduled work (single instance, Asia/Damascus):
  * - hourly: run_daily_jobs() — each university is evaluated once its `daily_job_hour` has passed;
  *   idempotent per day, so restarts and repeated hours never double-send.
- * - every minute: deliver web push for notification rows not yet pushed (covers DB-trigger notifications).
+ * - every minute: write due recurring notifications (run_recurring_notifications, once per day each), then
+ *   deliver web push for notification rows not yet pushed (covers DB-trigger notifications).
  */
 export function startCron(db: Db, push: PushService, log: FastifyBaseLogger): () => void {
   let dailyRunning = false;
@@ -27,10 +28,13 @@ export function startCron(db: Db, push: PushService, log: FastifyBaseLogger): ()
   };
 
   const runPush = async () => {
-    if (pushRunning || !push.enabled) return;
+    if (pushRunning) return;
     pushRunning = true;
     try {
-      await push.dispatchPending();
+      const { data, error } = await db.rpc('run_recurring_notifications');
+      if (error) log.error({ err: error.message }, 'recurring notifications failed');
+      else if (data) log.info({ notifications: data }, 'recurring notifications written');
+      if (push.enabled) await push.dispatchPending();
     } catch (err) {
       log.error(err, 'push dispatch failed');
     } finally {

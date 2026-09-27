@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/primitives';
 import { ErrorState, ListSkeleton } from '@/components/ui/states';
 import { ChangePasswordPage, LoginPage, PhotoUploadPage } from '@/features/auth/AuthPages';
 import { SetupPage } from '@/features/student/SetupPage';
+import { PickupPage } from '@/features/student/PickupPage';
 import { t } from '@/i18n/ar';
 import { useAuth } from './auth';
 import { AdminLayout, ScanLayout, StudentLayout } from './layouts';
@@ -29,6 +30,7 @@ const Admin = {
   Routes: lazy(() => import('@/features/admin/RoutesPage')),
   Stops: lazy(() => import('@/features/admin/StopsPage')),
   Stats: lazy(() => import('@/features/admin/StatsPage')),
+  Pickups: lazy(() => import('@/features/admin/PickupsPage')),
   Students: lazy(() => import('@/features/admin/StudentsPage')),
   StudentDetail: lazy(() => import('@/features/admin/StudentDetailPage')),
   StudentForm: lazy(() => import('@/features/admin/StudentFormPage')),
@@ -146,6 +148,7 @@ export const router = createBrowserRouter([
               { path: '/trips', element: <Page><TripsPage /></Page> },
               { path: '/packages', element: <Page><StudentPackagesPage /></Page> },
               { path: '/routes', element: <Page><StudentRoutesPage /></Page> },
+              { path: '/pickup', element: <Page><PickupPage /></Page> },
               { path: '/notifications', element: <Page><StudentNotificationsPage /></Page> },
               { path: '/account', element: <Page><AccountPage /></Page> },
             ],
@@ -177,6 +180,7 @@ export const router = createBrowserRouter([
               { path: 'routes', element: <Page><Admin.Routes /></Page> },
               { path: 'stops', element: <Page><Admin.Stops /></Page> },
               { path: 'stats', element: <Page><Admin.Stats /></Page> },
+              { path: 'pickups', element: <Page><Admin.Pickups /></Page> },
               { path: 'students', element: <Page><Admin.Students /></Page> },
               { path: 'students/new', element: <Page><Admin.StudentForm /></Page> },
               { path: 'students/:id', element: <Page><Admin.StudentDetail /></Page> },

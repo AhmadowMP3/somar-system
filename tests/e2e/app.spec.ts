@@ -9,6 +9,7 @@ import {
   jpegFile,
   service,
   STAFF_PASSWORD,
+  freezeClock,
   type E2EUniversity,
 } from './fixtures.js';
 
@@ -258,7 +259,7 @@ test('7. no English text is visible on the main screens of every role', async ({
 
   await login(page, st.transportNumber, STAFF_PASSWORD);
   await expect(page).toHaveURL(/\/$/);
-  await visit(['/', '/trips', '/packages', '/routes', '/notifications', '/account', '/password']);
+  await visit(['/', '/trips', '/packages', '/routes', '/notifications', '/account', '/password', '/pickup']);
   await page.context().clearCookies();
   await page.evaluate(() => localStorage.clear());
 
@@ -287,6 +288,7 @@ test('7. no English text is visible on the main screens of every role', async ({
     '/admin/settings',
     '/admin/audit',
     '/admin/stats',
+    '/admin/pickups',
     '/admin/stops',
     `/admin/cards?ids=${st.id}`,
   ]);
@@ -425,4 +427,61 @@ test('13. the student sees the card on the new design and downloads it as an ima
   const { default: sharp } = await import('sharp');
   const meta = await sharp(path).metadata();
   expect([meta.format, meta.width, meta.height]).toEqual(['png', 2068, 1304]);
+});
+
+test('14. admin schedules a weekly notification for several days at a set time, and can pause it', async ({ page }) => {
+  await login(page, ADMIN_CODE, ADMIN_PASSWORD);
+  await expect(page).toHaveURL(/\/admin$/);
+  await pickUniversity(page, uni.id);
+  await page.goto('/admin/notifications');
+  await page.getByTestId('recurring-add').click();
+  const dialog = page.getByRole('dialog');
+  await dialog.getByLabel('العنوان').fill('تذكير اختيار المكان');
+  await dialog.getByLabel('نص الإشعار').fill('اختر مكان انطلاقك لغد من التطبيق');
+  await dialog.getByTestId('recurring-save').click();
+  await expect(dialog.getByRole('alert')).toHaveText('اختر يوماً واحداً على الأقل');
+  await dialog.getByText('الاثنين', { exact: true }).click();
+  await dialog.getByText('الأربعاء', { exact: true }).click();
+  await dialog.getByTestId('recurring-time').fill('18:00');
+  await dialog.getByTestId('recurring-save').click();
+  const list = page.getByTestId('recurring-list');
+  await expect(list).toContainText('تذكير اختيار المكان');
+  await expect(list).toContainText('كل الاثنين، الأربعاء الساعة 18:00');
+  await list.getByRole('switch').click();
+  await expect(list).toContainText('متوقف');
+});
+
+test('15. tomorrow pickup: closed before 18:00, the student picks a stop after, the admin sees it by area', async ({ page }) => {
+  const st = await createE2EStudent(uni, { subscribe: true, photo: true, ready: true });
+  try {
+    await freezeClock('2026-10-05 17:00');
+    await login(page, st.transportNumber, STAFF_PASSWORD);
+    await expect(page).toHaveURL(/\/$/);
+    await expect(page.getByTestId('pickup-home')).toContainText('تفتح هذه الصفحة كل يوم الساعة 6 مساءً');
+    await page.getByTestId('pickup-home').click();
+    await expect(page.getByTestId('pickup-closed')).toBeVisible();
+
+    await freezeClock('2026-10-05 19:00');
+    await page.reload();
+    await expect(page.getByTestId('pickup-open')).toBeVisible();
+    await expect(page.getByText('ليوم الثلاثاء', { exact: false })).toBeVisible();
+    await page.getByTestId('pickup-stop-search').fill('ساحة');
+    await page.getByTestId('pickup-stop-options').getByText('ساحة جامعة', { exact: true }).click();
+    await page.getByTestId('pickup-save').click();
+    await expect(page.getByTestId('pickup-current')).toHaveText('ساحة جامعة');
+
+    await page.context().clearCookies();
+    await page.evaluate(() => localStorage.clear());
+    await login(page, ADMIN_CODE, ADMIN_PASSWORD);
+    await expect(page).toHaveURL(/\/admin$/);
+    await pickUniversity(page, uni.id);
+    await page.goto('/admin/pickups');
+    await expect(page.getByTestId('pickup-summary')).toContainText('اختار 1 من أصل');
+    const areas = page.getByTestId('pickup-areas');
+    await expect(areas).toContainText('بدون منطقة');
+    await areas.getByTestId('pickup-stop-row').filter({ hasText: 'ساحة جامعة' }).click();
+    await expect(areas).toContainText(st.transportNumber);
+  } finally {
+    await freezeClock(null);
+  }
 });

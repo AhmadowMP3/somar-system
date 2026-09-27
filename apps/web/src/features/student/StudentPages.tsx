@@ -20,6 +20,7 @@ import { useAuth } from '@/app/auth';
 import { DirectionBadge } from '@/components/common';
 import { QrCode } from '@/components/QrCode';
 import { CardFace, downloadCard, toDataUri, type CardValues } from '@/components/StudentCard';
+import { PickupHomeCard } from './PickupPage';
 import { Dialog, useToast } from '@/components/ui/overlay';
 import { Badge, Button, Card, CardTitle, Skeleton } from '@/components/ui/primitives';
 import { EmptyState, PageHeader, QueryState } from '@/components/ui/states';
@@ -119,6 +120,8 @@ export function StudentHome() {
               {t.cards.myCard}
             </Button>
           </Card>
+
+          <PickupHomeCard />
 
           <Card>
             {d.subscription ? (

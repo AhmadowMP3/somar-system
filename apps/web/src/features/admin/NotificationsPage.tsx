@@ -11,6 +11,7 @@ import { api } from '@/lib/api';
 import { errorMessage } from '@/lib/errors';
 import { supabase, unwrap } from '@/lib/supabase';
 import { useColleges, usePackages, WithUniversity } from './common';
+import { RecurringNotifications } from './RecurringNotifications';
 
 type Broadcast = { id: string; title: string; body: string; audience: { kind: string }; recipients: number; created_at: string };
 type StaffNotification = { id: string; title: string; body: string; type: string; created_at: string };
@@ -168,6 +169,7 @@ function NotificationsBody({ universityId }: { universityId: string }) {
           </Card>
         </div>
       </div>
+      <RecurringNotifications universityId={universityId} />
       <Card>
         <CardTitle>{n.history}</CardTitle>
         <QueryState query={history} empty={(rows) => (rows.length ? null : <EmptyState title={n.empty} />)}>
