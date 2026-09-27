@@ -2,7 +2,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { ExternalLink, LocateFixed, Pencil, Plus } from 'lucide-react';
 import { useEffect, useId, useState, type FormEvent } from 'react';
 import { Link } from 'react-router-dom';
-import { parseMapsUrl } from '@somar/shared';
+import { findPlusCode, parseMapsUrl } from '@somar/shared';
 import { useStopLibrary, type LibraryStop } from '@/features/student/StudentPages';
 import { Dialog, useToast } from '@/components/ui/overlay';
 import { Badge, Button, Field, Input, Select, Switch } from '@/components/ui/primitives';
@@ -32,12 +32,13 @@ function StopsBody({ universityId }: { universityId: string }) {
   });
   const areaName = (id: string | null) => areas.data?.find((a) => a.id === id)?.name ?? t.common.none;
   const missing = (query.data ?? []).filter((x) => x.maps_url && (x.lat == null || x.lng == null)).length;
-  const [failed, setFailed] = useState<string[] | null>(null);
+  const [report, setReport] = useState<{ failed: string[]; shared: string[][] } | null>(null);
   const resolveAll = useMutation({
-    mutationFn: () => api.post<{ checked: number; fixed: number; failed: string[] }>('/stops/resolve-missing', { university_id: universityId }),
+    mutationFn: () =>
+      api.post<{ checked: number; fixed: number; failed: string[]; shared: string[][] }>('/stops/resolve-missing', { university_id: universityId }),
     onSuccess: (res) => {
       toast.success(s.resolvedCount(res.fixed, res.checked));
-      if (res.failed.length) setFailed(res.failed);
+      if (res.failed.length || res.shared.length) setReport({ failed: res.failed, shared: res.shared });
       void qc.invalidateQueries({ queryKey: ['stops', universityId] });
       void qc.invalidateQueries({ queryKey: ['routes', universityId] });
     },
@@ -110,12 +111,29 @@ function StopsBody({ universityId }: { universityId: string }) {
           />
         )}
       </QueryState>
-      <Dialog open={failed !== null} onOpenChange={(o) => (o ? undefined : setFailed(null))} title={s.failedTitle} description={s.failedHint}>
-        <ul className="list-disc space-y-1 ps-5" data-testid="resolve-failed">
-          {(failed ?? []).map((name) => (
-            <li key={name}>{name}</li>
-          ))}
-        </ul>
+      <Dialog open={report !== null} onOpenChange={(o) => (o ? undefined : setReport(null))} title={s.failedTitle}>
+        <div className="space-y-4">
+          {report?.failed.length ? (
+            <section>
+              <p className="mb-2 text-sm text-muted">{s.failedHint}</p>
+              <ul className="list-disc space-y-1 ps-5" data-testid="resolve-failed">
+                {report.failed.map((name) => (
+                  <li key={name}>{name}</li>
+                ))}
+              </ul>
+            </section>
+          ) : null}
+          {report?.shared.length ? (
+            <section>
+              <p className="mb-2 text-sm font-semibold text-warning">{s.sharedHint}</p>
+              <ul className="list-disc space-y-1 ps-5" data-testid="resolve-shared">
+                {report.shared.map((names) => (
+                  <li key={names.join('|')}>{names.join(t.listSeparator)}</li>
+                ))}
+              </ul>
+            </section>
+          ) : null}
+        </div>
       </Dialog>
       {editing ? (
         <StopFormDialog universityId={universityId} stop={editing === 'new' ? null : editing} onClose={() => setEditing(null)} />
@@ -136,14 +154,14 @@ function StopFormDialog({ universityId, stop, onClose }: { universityId: string;
   const unchanged = Boolean(stop && url === (stop.maps_url ?? '') && stop.lat != null && stop.lng != null);
   const parsed = parseMapsUrl(url);
   // share links (maps.app.goo.gl …) have no coordinates in them: the server follows them to the full address
-  const needsServer = Boolean(url && !parsed && !unchanged && /^https?:\/\//i.test(url));
+  const needsServer = Boolean(url && !parsed && !unchanged && (/^https?:\/\//i.test(url) || findPlusCode(url)));
   const [resolved, setResolved] = useState<{ url: string; lat: number; lng: number } | { url: string; failed: true } | null>(null);
   useEffect(() => {
     if (!needsServer) return;
     let cancelled = false;
     const timer = setTimeout(() => {
       api
-        .post<{ lat: number; lng: number }>('/maps/resolve', { url })
+        .post<{ lat: number; lng: number }>('/maps/resolve', { url, university_id: universityId })
         .then((c) => !cancelled && setResolved({ url, ...c }))
         .catch(() => !cancelled && setResolved({ url, failed: true }));
     }, 500);
@@ -151,14 +169,14 @@ function StopFormDialog({ universityId, stop, onClose }: { universityId: string;
       cancelled = true;
       clearTimeout(timer);
     };
-  }, [url, needsServer]);
+  }, [url, needsServer, universityId]);
   const fromServer = resolved && resolved.url === url && !('failed' in resolved) ? resolved : null;
   const coords = unchanged && stop ? { lat: Number(stop.lat), lng: Number(stop.lng) } : (parsed ?? fromServer);
   const resolving = needsServer && (!resolved || resolved.url !== url);
   const save = useMutation({
     mutationFn: async () => {
       let found = coords;
-      if (!found && needsServer) found = await api.post<{ lat: number; lng: number }>('/maps/resolve', { url }).catch(() => null);
+      if (!found && needsServer) found = await api.post<{ lat: number; lng: number }>('/maps/resolve', { url, university_id: universityId }).catch(() => null);
       const row = {
         university_id: universityId,
         name: form.name.trim(),

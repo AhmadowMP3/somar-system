@@ -73,3 +73,16 @@
     - **More formats**: the parser now also reads `/maps/search/lat,lng`, `/maps/place/lat,lng`, `?q=loc:`, `geo:` and plain «lat, lng» pasted from Google Maps, and prefers the exact place over the map centre.
     - **Stop form**: resolves share links while typing and shows the coordinates found. It no longer wipes an existing location when a stop is saved with its link unchanged.
     - **One-click fix**: «استخراج المواقع الناقصة (N)» fills in every stop that has a link but no location (`POST /api/stops/resolve-missing`, audited). Stops that still cannot be located are listed with instructions.
+63. **Plus Codes in Google share links** (found on production data): most Aleppo share links redirect to `maps?q=644M+8MW+<place name>`. That is a short Plus Code (Open Location Code), not coordinates, so the first fix found only 11 of 51.
+    - **Decoder**: `packages/shared/src/pluscode.ts` decodes Plus Codes offline, per the official specification and tested against its example.
+    - **Reference point**: a short code only names a spot relative to a nearby point, so the resolver completes it from the centre of the university's stops that already have a location.
+    - **Two passes**: «استخراج المواقع الناقصة» first resolves the links that lead to coordinates, then the Plus Codes.
+    - **Shared links**: the result now also lists stops that share one link under different names.
+    - **The stop screen** explains that a place-name-only link needs a dropped pin.
+
+    **Run on production on the owner's request** (`scripts/fix-stop-locations.ts`: dry run first, then `--commit`; any result more than 25 km from the city centre is never saved): 29 locations were saved, all within 5 km of the centre, bringing it to 40 of 55 stops located.
+
+    **Deliberately not saved:**
+    - «دوار الكرة», «ساحة الجامعة», «دوار عمر ابوريشة» carry the link of «جامع الرحمن» (copied by mistake).
+    - Eight links hold only a place name: «المهندسين», «انصاري شرقي», «بنك الدم», «دوار 3000 شقة», «دوار الشفاء», «دوار الطب العربي», «دوار الموت», «مفرق العوارض». OpenStreetMap geocoding was tried and found unreliable (a hospital for a roundabout, a whole street for a junction), so no location is guessed for a bus stop.
+    - Four stops have no link at all.

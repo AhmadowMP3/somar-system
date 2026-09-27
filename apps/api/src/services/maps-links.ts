@@ -1,4 +1,4 @@
-import { coordsFromMapsHtml, parseMapsUrl, type LatLng } from '@somar/shared';
+import { coordsFromMapsHtml, decodePlusCode, findPlusCode, parseMapsUrl, type LatLng } from '@somar/shared';
 
 /** Only Google Maps hosts are ever fetched (the server must not become a proxy to arbitrary addresses). */
 export function isGoogleMapsHost(host: string): boolean {
@@ -7,7 +7,30 @@ export function isGoogleMapsHost(host: string): boolean {
 }
 
 type Fetch = typeof fetch;
-export type ResolveOptions = { fetch?: Fetch; isAllowedHost?: (host: string) => boolean; maxHops?: number; timeoutMs?: number };
+export type ResolveOptions = {
+  fetch?: Fetch;
+  isAllowedHost?: (host: string) => boolean;
+  maxHops?: number;
+  timeoutMs?: number;
+  /** Any point in the same city: completes short Plus Codes («644M+8MW»), which Google often puts in share links. */
+  reference?: LatLng | null;
+};
+
+/**
+ * Coordinates from a Plus Code in the address's search text (?q=644M+8MW+اسم المكان).
+ * Read from the raw query: URLSearchParams would turn the code's «+» into a space.
+ */
+function fromPlusCode(url: URL, reference: LatLng | null | undefined): LatLng | null {
+  const raw = /[?&](?:q|query)=([^&]*)/.exec(url.search)?.[1] ?? url.pathname;
+  let text = raw;
+  try {
+    text = decodeURIComponent(raw);
+  } catch {
+    /* keep the raw text */
+  }
+  const code = findPlusCode(text);
+  return code ? decodePlusCode(code, reference) : null;
+}
 
 const BROWSER_UA =
   'Mozilla/5.0 (Linux; Android 14; Pixel 7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Mobile Safari/537.36';
@@ -37,6 +60,12 @@ export async function resolveMapsLocation(raw: string, opts: ResolveOptions = {}
   const allowed = opts.isAllowedHost ?? isGoogleMapsHost;
   const direct = parseMapsUrl(raw);
   if (direct) return { ...direct, url: raw };
+  // plain Plus Code typed or pasted instead of a link
+  const pasted = findPlusCode(raw);
+  if (pasted && !/^https?:/i.test(raw.trim())) {
+    const p = decodePlusCode(pasted, opts.reference);
+    return p ? { ...p, url: raw } : null;
+  }
 
   let current: URL;
   try {
@@ -46,7 +75,7 @@ export async function resolveMapsLocation(raw: string, opts: ResolveOptions = {}
   }
   for (let hop = 0; hop < (opts.maxHops ?? 6); hop += 1) {
     current = unwrapConsent(current);
-    const fromUrl = parseMapsUrl(current.toString());
+    const fromUrl = parseMapsUrl(current.toString()) ?? fromPlusCode(current, opts.reference);
     if (fromUrl) return { ...fromUrl, url: current.toString() };
     if (!['http:', 'https:'].includes(current.protocol) || !allowed(current.hostname)) return null;
 

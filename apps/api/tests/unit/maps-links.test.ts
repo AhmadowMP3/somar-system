@@ -42,6 +42,24 @@ describe('Google Maps link resolution', () => {
     expect(await resolveMapsLocation('https://maps.app.goo.gl/Zz', { fetch: impl })).toMatchObject({ lat: 36.1893, lng: 37.1561 });
   });
 
+  it('completes a Plus Code share address (as Google sends for Aleppo stops) from the city reference', async () => {
+    // real shape: …/maps?q=644M+8MW+<place name>  — the code's «+» and the spaces are both «+»
+    const { impl } = fakeFetch({
+      'https://maps.app.goo.gl/Plus': {
+        status: 302,
+        location: 'https://maps.google.com/?q=644M+8MW+%D8%A7%D8%AF%D9%88%D9%86%D9%8A%D8%B3%D8%8C+%D8%AD%D9%84%D8%A8&ftid=0x0:0x1',
+      },
+    });
+    const aleppo = { lat: 36.2, lng: 37.13 };
+    const res = await resolveMapsLocation('https://maps.app.goo.gl/Plus', { fetch: impl, reference: aleppo });
+    expect(res?.lat).toBeCloseTo(36.20586, 4);
+    expect(res?.lng).toBeCloseTo(37.1342, 3);
+    // without a reference a short code cannot be placed
+    expect(await resolveMapsLocation('https://maps.app.goo.gl/Plus', { fetch: impl })).toBeNull();
+    // a Plus Code typed directly
+    expect(await resolveMapsLocation('644M+8MW', { fetch: impl, reference: aleppo })).toMatchObject({ lat: res?.lat, lng: res?.lng });
+  });
+
   it('never leaves Google, and gives up cleanly', async () => {
     const { impl, calls } = fakeFetch({ 'https://maps.app.goo.gl/evil': { status: 302, location: 'http://169.254.169.254/latest/meta-data' } });
     expect(await resolveMapsLocation('https://maps.app.goo.gl/evil', { fetch: impl })).toBeNull();
