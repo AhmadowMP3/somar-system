@@ -8,6 +8,7 @@ import {
   destroyUniversity,
   freeze,
   service,
+  setSettings,
   signIn,
   unfreeze,
   type Fixture,
@@ -118,45 +119,80 @@ describe('recurring notifications', () => {
   });
 });
 
-describe('tomorrow pickup stop', () => {
-  it('opens at 18:00, saves for the next day, can be changed, and feeds the staff statistics and archive', async () => {
-    await freeze('2026-10-05 17:30');
-    const closed = await asA.rpc('choose_my_pickup', { p_stop_id: stopA });
-    expect(closed.error?.message).toBe('PICKUP_CLOSED');
-    expect((await asA.rpc('pickup_window')).data).toMatchObject({ open: false, service_date: '2026-10-06' });
+describe('tomorrow pickup and return', () => {
+  beforeAll(async () => {
+    // return routes: 14:00 and 16:00 every day; 15:00 only on Fridays (5) — 2026-10-06 is a Tuesday
+    await service.from('routes').insert([
+      { university_id: fx.universityId, name: 'عودة 2', direction: 'return', departure_time: '14:00' },
+      { university_id: fx.universityId, name: 'عودة 4', direction: 'both', departure_time: '16:00', active_days: [1, 2, 3, 4, 5, 6, 7] },
+      { university_id: fx.universityId, name: 'عودة الجمعة', direction: 'return', departure_time: '15:00', active_days: [5] },
+      { university_id: fx.universityId, name: 'ذهاب', direction: 'outbound', departure_time: '07:00' },
+    ]);
+    await setSettings(fx, { pickup_open_time: '17:00', pickup_close_time: '21:00' });
+  });
 
-    await freeze('2026-10-05 18:01');
-    expect((await asA.rpc('pickup_window')).data).toMatchObject({ open: true, service_date: '2026-10-06' });
-    const first = await asA.rpc('choose_my_pickup', { p_stop_id: stopB });
-    expect(first.error).toBeNull();
-    expect(first.data).toBe('2026-10-06');
-    await asA.rpc('choose_my_pickup', { p_stop_id: stopA }); // change of mind
-    await asB.rpc('choose_my_pickup', { p_stop_id: stopA });
-    const foreign = await asB.rpc('choose_my_pickup', { p_stop_id: foreignStop });
+  it('opens and closes at the times set in the settings', async () => {
+    await freeze('2026-10-05 16:59');
+    expect((await asA.rpc('pickup_window')).data).toMatchObject({ open: false, phase: 'before', opens_at: '17:00', closes_at: '21:00', service_date: '2026-10-06' });
+    const early = await asA.rpc('choose_my_pickup', { p_stop_id: stopA, p_return_time: '14:00', p_return_stop_id: stopA });
+    expect(early.error?.message).toBe('PICKUP_CLOSED');
+    await freeze('2026-10-05 21:00');
+    expect((await asA.rpc('pickup_window')).data).toMatchObject({ open: false, phase: 'after' });
+    const late = await asA.rpc('choose_my_pickup', { p_stop_id: stopA, p_return_time: '14:00', p_return_stop_id: stopA });
+    expect(late.error?.message).toBe('PICKUP_CLOSED');
+  });
+
+  it('offers only tomorrow return times, validates the choice, saves it once and locks it', async () => {
+    await freeze('2026-10-05 18:00');
+    expect((await asA.rpc('pickup_window')).data).toMatchObject({ open: true, phase: 'open' });
+    const { data: times } = await asA.rpc('pickup_return_times');
+    expect((times as { slot: string }[]).map((x) => x.slot)).toEqual(['14:00:00', '16:00:00']);
+
+    const noReturn = await asA.rpc('choose_my_pickup', { p_stop_id: stopA });
+    expect(noReturn.error?.message).toBe('RETURN_TIME_INVALID');
+    const friday = await asA.rpc('choose_my_pickup', { p_stop_id: stopA, p_return_time: '15:00', p_return_stop_id: stopA });
+    expect(friday.error?.message).toBe('RETURN_TIME_INVALID');
+    const noDrop = await asA.rpc('choose_my_pickup', { p_stop_id: stopA, p_return_time: '14:00', p_return_stop_id: foreignStop });
+    expect(noDrop.error?.message).toBe('RETURN_STOP_INVALID');
+    const foreign = await asA.rpc('choose_my_pickup', { p_stop_id: foreignStop, p_return_time: '14:00', p_return_stop_id: stopA });
     expect(foreign.error?.message).toBe('STOP_INVALID');
 
-    const { data: own } = await asA.from('pickup_choices').select('service_date, stop_id');
-    expect(own).toEqual([{ service_date: '2026-10-06', stop_id: stopA }]);
+    const ok = await asA.rpc('choose_my_pickup', { p_stop_id: stopA, p_return_time: '14:00', p_return_stop_id: stopB });
+    expect(ok.error).toBeNull();
+    expect(ok.data).toBe('2026-10-06');
+    const again = await asA.rpc('choose_my_pickup', { p_stop_id: stopB, p_return_time: '16:00', p_return_stop_id: stopB });
+    expect(again.error?.message).toBe('PICKUP_LOCKED');
+    await asB.rpc('choose_my_pickup', { p_stop_id: stopA, p_return_time: '16:00', p_return_stop_id: stopA });
+
+    const { data: own } = await asA.from('pickup_choices').select('service_date, stop_id, return_time, return_stop_id');
+    expect(own).toEqual([{ service_date: '2026-10-06', stop_id: stopA, return_time: '14:00:00', return_stop_id: stopB }]);
     const peek = await asB.from('pickup_choices').select('student_id').eq('student_id', a.id);
     expect(peek.data).toEqual([]);
     const direct = await asB
       .from('pickup_choices')
       .insert({ student_id: b.id, service_date: '2026-10-09', university_id: fx.universityId, stop_id: stopB });
     expect(direct.error).not.toBeNull();
+  });
 
-    // next evening: a new day's choice; the previous day stays in the archive
-    await freeze('2026-10-06 20:00');
-    await asA.rpc('choose_my_pickup', { p_stop_id: stopB });
+  it('feeds the staff statistics (outbound and return) and the archive', async () => {
+    await freeze('2026-10-06 18:30'); // next evening: a new day
+    await asA.rpc('choose_my_pickup', { p_stop_id: stopB, p_return_time: '16:00', p_return_stop_id: stopB });
 
     const { data: stats, error } = await gs.rpc('pickup_stats', { p_university_id: fx.universityId, p_date: '2026-10-06' });
     expect(error).toBeNull();
     expect(stats).toEqual([{ area_id: fx.areaIds['الرجاء'], area_name: 'الرجاء', stop_id: stopA, stop_name: 'دوار الصاخور', students: 2 }]);
+    const { data: back } = await gs.rpc('pickup_return_stats', { p_university_id: fx.universityId, p_date: '2026-10-06' });
+    expect(back).toEqual([
+      { return_time: '14:00:00', area_id: null, area_name: null, stop_id: stopB, stop_name: 'جسر الحج', students: 1 },
+      { return_time: '16:00:00', area_id: fx.areaIds['الرجاء'], area_name: 'الرجاء', stop_id: stopA, stop_name: 'دوار الصاخور', students: 1 },
+    ]);
     const { data: days } = await gs.rpc('pickup_days', { p_university_id: fx.universityId });
     expect(days).toEqual([
       { service_date: '2026-10-07', students: 1 },
       { service_date: '2026-10-06', students: 2 },
     ]);
-    const denied = await asA.rpc('pickup_stats', { p_university_id: fx.universityId, p_date: '2026-10-06' });
+    const denied = await asA.rpc('pickup_return_stats', { p_university_id: fx.universityId, p_date: '2026-10-06' });
     expect(denied.error?.message).toBe('FORBIDDEN');
   });
 });
+

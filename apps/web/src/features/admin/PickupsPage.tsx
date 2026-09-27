@@ -1,7 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { ChevronDown, MapPin } from 'lucide-react';
 import { useId, useMemo, useState } from 'react';
-import { formatDate } from '@somar/shared';
+import { formatClock, formatDate } from '@somar/shared';
 import { Badge, Button, Card, Field, Select } from '@/components/ui/primitives';
 import { EmptyState, PageHeader, QueryState } from '@/components/ui/states';
 import { t } from '@/i18n/ar';
@@ -10,12 +10,27 @@ import { cn } from '@/lib/utils';
 import { WithUniversity } from './common';
 
 type StatRow = { area_id: string | null; area_name: string | null; stop_id: string; stop_name: string; students: number };
+type ReturnRow = StatRow & { return_time: string };
 type DayRow = { service_date: string; students: number };
 type AreaGroup = { key: string; name: string; total: number; stops: StatRow[] };
+/** Which students a stop line lists: waiting there in the morning, or dropped there at a return time. */
+type StopFilter = { kind: 'outbound' } | { kind: 'return'; time: string };
 
 function dayLabel(date: string): string {
   const dow = new Date(`${date}T00:00:00Z`).getUTCDay() || 7;
   return `${t.days[dow]} ${formatDate(date)}`;
+}
+
+function groupByArea(rows: StatRow[]): AreaGroup[] {
+  const groups = new Map<string, AreaGroup>();
+  for (const r of rows) {
+    const key = r.area_id ?? '';
+    const g = groups.get(key) ?? { key, name: r.area_name ?? t.admin.pickups.noArea, total: 0, stops: [] };
+    g.total += r.students;
+    g.stops.push(r);
+    groups.set(key, g);
+  }
+  return [...groups.values()].sort((a, b) => b.total - a.total);
 }
 
 export default function PickupsPage() {
@@ -85,49 +100,21 @@ function PickupsBody({ universityId }: { universityId: string }) {
       <QueryState query={stats}>
         {(rows) => {
           const chosen = rows.reduce((n, r) => n + r.students, 0);
-          if (!rows.length) return <EmptyState title={s.empty} hint={s.emptyHint} />;
-          const groups = new Map<string, AreaGroup>();
-          for (const r of rows) {
-            const key = r.area_id ?? '';
-            const g = groups.get(key) ?? { key, name: r.area_name ?? s.noArea, total: 0, stops: [] };
-            g.total += r.students;
-            g.stops.push(r);
-            groups.set(key, g);
-          }
-          const areas = [...groups.values()].sort((a, b) => b.total - a.total);
+          if (!rows.length || !date) return <EmptyState title={s.empty} hint={s.emptyHint} />;
           return (
             <div className="space-y-4">
               <Card className="space-y-2">
                 <p className="font-semibold" data-testid="pickup-summary">
-                  {date ? `${dayLabel(date)} · ` : ''}
-                  {s.chosen(chosen, active.data ?? 0)}
+                  {dayLabel(date)} · {s.chosen(chosen, active.data ?? 0)}
                 </p>
                 <div className="h-2 w-full overflow-hidden rounded-full bg-surface" aria-hidden>
                   <div className="h-full rounded-full bg-success" style={{ width: `${active.data ? (chosen / active.data) * 100 : 0}%` }} />
                 </div>
               </Card>
-              <ul className="grid gap-4 lg:grid-cols-2" data-testid="pickup-areas">
-                {areas.map((g) => (
-                  <li key={g.key}>
-                    <Card>
-                      <div className="mb-3 flex items-center justify-between gap-2">
-                        <p className="flex items-center gap-2 text-lg font-extrabold">
-                          <MapPin className="h-5 w-5 text-brand-ink" aria-hidden />
-                          {g.name}
-                        </p>
-                        <Badge tone="info">
-                          <span className="num">{g.total}</span> {s.students}
-                        </Badge>
-                      </div>
-                      <ul className="divide-y divide-border">
-                        {g.stops.map((stop) => (
-                          <StopLine key={stop.stop_id} stop={stop} date={date as string} universityId={universityId} />
-                        ))}
-                      </ul>
-                    </Card>
-                  </li>
-                ))}
-              </ul>
+              <h2 className="text-lg font-extrabold text-brand-ink">{s.outbound}</h2>
+              <AreaCards areas={groupByArea(rows)} date={date} universityId={universityId} filter={{ kind: 'outbound' }} testId="pickup-areas" />
+              <h2 className="pt-2 text-lg font-extrabold text-brand-ink">{s.return}</h2>
+              <ReturnSection date={date} universityId={universityId} />
             </div>
           );
         }}
@@ -136,22 +123,104 @@ function PickupsBody({ universityId }: { universityId: string }) {
   );
 }
 
+function AreaCards({
+  areas,
+  date,
+  universityId,
+  filter,
+  testId,
+}: {
+  areas: AreaGroup[];
+  date: string;
+  universityId: string;
+  filter: StopFilter;
+  testId: string;
+}) {
+  const s = t.admin.pickups;
+  return (
+    <ul className="grid gap-4 lg:grid-cols-2" data-testid={testId}>
+      {areas.map((g) => (
+        <li key={g.key}>
+          <Card>
+            <div className="mb-3 flex items-center justify-between gap-2">
+              <p className="flex items-center gap-2 text-lg font-extrabold">
+                <MapPin className="h-5 w-5 text-brand-ink" aria-hidden />
+                {g.name}
+              </p>
+              <Badge tone="info">
+                <span className="num">{g.total}</span> {s.students}
+              </Badge>
+            </div>
+            <ul className="divide-y divide-border">
+              {g.stops.map((stop) => (
+                <StopLine key={stop.stop_id} stop={stop} date={date} universityId={universityId} filter={filter} />
+              ))}
+            </ul>
+          </Card>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+/** Return choices: one block per return time, then areas and drop-off stops inside it. */
+function ReturnSection({ date, universityId }: { date: string; universityId: string }) {
+  const s = t.admin.pickups;
+  const stats = useQuery({
+    queryKey: ['pickup-return-stats', universityId, date],
+    queryFn: async () => unwrap(await supabase.rpc('pickup_return_stats', { p_university_id: universityId, p_date: date })) as ReturnRow[],
+  });
+  return (
+    <QueryState query={stats}>
+      {(rows) => {
+        if (!rows.length) return <p className="text-sm text-muted">{s.noReturns}</p>;
+        const times = [...new Set(rows.map((r) => r.return_time))].sort();
+        return (
+          <div className="space-y-4" data-testid="pickup-returns">
+            {times.map((time) => {
+              const slot = rows.filter((r) => r.return_time === time);
+              const total = slot.reduce((n, r) => n + r.students, 0);
+              return (
+                <section key={time} className="space-y-2">
+                  <p className="flex items-center gap-2 font-extrabold">
+                    <span className="num">{s.returnAt(formatClock(time))}</span>
+                    <Badge tone="info">
+                      <span className="num">{total}</span> {s.students}
+                    </Badge>
+                  </p>
+                  <AreaCards
+                    areas={groupByArea(slot)}
+                    date={date}
+                    universityId={universityId}
+                    filter={{ kind: 'return', time }}
+                    testId="pickup-return-areas"
+                  />
+                </section>
+              );
+            })}
+          </div>
+        );
+      }}
+    </QueryState>
+  );
+}
+
 /** One stop with its count; the student list loads only when opened. */
-function StopLine({ stop, date, universityId }: { stop: StatRow; date: string; universityId: string }) {
+function StopLine({ stop, date, universityId, filter }: { stop: StatRow; date: string; universityId: string; filter: StopFilter }) {
   const s = t.admin.pickups;
   const [open, setOpen] = useState(false);
   const people = useQuery({
-    queryKey: ['pickup-people', universityId, date, stop.stop_id],
+    queryKey: ['pickup-people', universityId, date, stop.stop_id, filter],
     enabled: open,
-    queryFn: async () =>
-      unwrap(
-        await supabase
-          .from('pickup_choices')
-          .select('student_id, students(full_name, transport_number)')
-          .eq('university_id', universityId)
-          .eq('service_date', date)
-          .eq('stop_id', stop.stop_id),
-      ) as unknown as { student_id: string; students: { full_name: string; transport_number: string } | null }[],
+    queryFn: async () => {
+      let q = supabase
+        .from('pickup_choices')
+        .select('student_id, students(full_name, transport_number)')
+        .eq('university_id', universityId)
+        .eq('service_date', date);
+      q = filter.kind === 'outbound' ? q.eq('stop_id', stop.stop_id) : q.eq('return_stop_id', stop.stop_id).eq('return_time', filter.time);
+      return unwrap(await q) as unknown as { student_id: string; students: { full_name: string; transport_number: string } | null }[];
+    },
   });
   return (
     <li className="py-2">

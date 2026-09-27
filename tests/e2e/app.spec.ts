@@ -451,13 +451,19 @@ test('14. admin schedules a weekly notification for several days at a set time, 
   await expect(list).toContainText('متوقف');
 });
 
-test('15. tomorrow pickup: closed before 18:00, the student picks a stop after, the admin sees it by area', async ({ page }) => {
+test('15. tomorrow pickup: window from the settings, one locked choice of stop + return time + drop-off, admin sees both', async ({ page }) => {
   const st = await createE2EStudent(uni, { subscribe: true, photo: true, ready: true });
+  const { data: ret } = await service
+    .from('routes')
+    .insert({ university_id: uni.id, name: 'عودة الواجهة', direction: 'return', departure_time: '14:00' })
+    .select('id')
+    .single();
+  await service.from('settings').update({ pickup_open_time: '18:30', pickup_close_time: '22:00' }).eq('university_id', uni.id);
   try {
-    await freezeClock('2026-10-05 17:00');
+    await freezeClock('2026-10-05 18:00');
     await login(page, st.transportNumber, STAFF_PASSWORD);
     await expect(page).toHaveURL(/\/$/);
-    await expect(page.getByTestId('pickup-home')).toContainText('تفتح هذه الصفحة كل يوم الساعة 6 مساءً');
+    await expect(page.getByTestId('pickup-home')).toContainText('يفتح الاختيار كل يوم من الساعة 18:30 حتى الساعة 22:00');
     await page.getByTestId('pickup-home').click();
     await expect(page.getByTestId('pickup-closed')).toBeVisible();
 
@@ -465,10 +471,19 @@ test('15. tomorrow pickup: closed before 18:00, the student picks a stop after, 
     await page.reload();
     await expect(page.getByTestId('pickup-open')).toBeVisible();
     await expect(page.getByText('ليوم الثلاثاء', { exact: false })).toBeVisible();
+    await page.getByTestId('pickup-save').click();
+    await expect(page.getByRole('alert')).toHaveText('اختر مكان الذهاب ووقت العودة ومكان النزول');
     await page.getByTestId('pickup-stop-search').fill('ساحة');
     await page.getByTestId('pickup-stop-options').getByText('ساحة جامعة', { exact: true }).click();
+    await page.getByTestId('pickup-return-times').getByRole('radio', { name: '14:00' }).click();
+    await page.getByTestId('pickup-return-stop-search').fill('رجاء');
+    await page.getByTestId('pickup-return-stop-options').getByText('الرجاء', { exact: true }).click();
     await page.getByTestId('pickup-save').click();
-    await expect(page.getByTestId('pickup-current')).toHaveText('ساحة جامعة');
+    await page.getByRole('dialog').getByRole('button', { name: 'تأكيد' }).click();
+    const locked = page.getByTestId('pickup-locked');
+    await expect(locked.getByTestId('pickup-current')).toHaveText('ساحة جامعة');
+    await expect(locked.getByTestId('pickup-current-return')).toHaveText('الرجاء — الساعة 14:00');
+    await expect(page.getByTestId('pickup-save')).toHaveCount(0);
 
     await page.context().clearCookies();
     await page.evaluate(() => localStorage.clear());
@@ -481,7 +496,26 @@ test('15. tomorrow pickup: closed before 18:00, the student picks a stop after, 
     await expect(areas).toContainText('بدون منطقة');
     await areas.getByTestId('pickup-stop-row').filter({ hasText: 'ساحة جامعة' }).click();
     await expect(areas).toContainText(st.transportNumber);
+    const returns = page.getByTestId('pickup-returns');
+    await expect(returns).toContainText('عودة الساعة 14:00');
+    await expect(returns).toContainText('الرجاء');
+
+    // the window times are edited in the settings
+    await page.goto('/admin/settings');
+    await page.getByLabel('نطاق الإعدادات').selectOption('university');
+    await expect(page.getByTestId('pickup_open_time')).toHaveValue('18:30');
+    await page.getByTestId('pickup_open_time').fill('17:00');
+    await page.getByTestId('pickup_close_time').fill('16:00');
+    await page.getByRole('button', { name: 'حفظ' }).click();
+    await expect(page.getByText('ساعة الإغلاق يجب أن تكون بعد ساعة الفتح')).toBeVisible();
+    await page.getByTestId('pickup_close_time').fill('23:00');
+    await page.getByRole('button', { name: 'حفظ' }).click();
+    await expect(page.getByText('تم حفظ الإعدادات')).toBeVisible();
+    const { data: saved } = await service.from('settings').select('pickup_open_time, pickup_close_time').eq('university_id', uni.id).single();
+    expect(saved).toEqual({ pickup_open_time: '17:00:00', pickup_close_time: '23:00:00' });
   } finally {
     await freezeClock(null);
+    await service.from('pickup_choices').delete().eq('student_id', st.id);
+    await service.from('routes').delete().eq('id', ret?.id as string);
   }
 });

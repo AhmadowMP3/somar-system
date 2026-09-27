@@ -20,6 +20,8 @@ type SettingsRow = {
   daily_job_hour: number;
   max_photo_mb: number;
   password_min_length: number;
+  pickup_open_time: string;
+  pickup_close_time: string;
 };
 
 const NUMERIC: { key: keyof SettingsRow; min: number; max: number }[] = [
@@ -36,6 +38,11 @@ export default function SettingsPage() {
   const isAdmin = useIsAdmin();
   const { universityId, university } = useScope();
   const [scope, setScope] = useState<'global' | 'university'>(universityId ? 'university' : 'global');
+  const [scopeTouched, setScopeTouched] = useState(false);
+  // the selected university can load after this page mounts; follow it until the admin picks a scope
+  useEffect(() => {
+    if (!scopeTouched) setScope(universityId ? 'university' : 'global');
+  }, [universityId, scopeTouched]);
   const scopeId = useId();
   const target = scope === 'global' ? null : universityId;
 
@@ -58,7 +65,11 @@ export default function SettingsPage() {
       {isAdmin ? (
         <Card>
           <Field label={s.scope} htmlFor={scopeId}>
-            <Select id={scopeId} value={scope} onChange={(e) => setScope(e.target.value as typeof scope)}>
+            <Select id={scopeId} value={scope} onChange={(e) => {
+                setScopeTouched(true);
+                setScope(e.target.value as typeof scope);
+              }}
+            >
               <option value="global">{s.global}</option>
               {universityId ? (
                 <option value="university">
@@ -94,7 +105,10 @@ function SettingsForm({ row, inherited, target, readOnly }: { row: SettingsRow; 
         daily_job_hour: Number(form.daily_job_hour),
         max_photo_mb: Number(form.max_photo_mb),
         password_min_length: Number(form.password_min_length),
+        pickup_open_time: form.pickup_open_time.slice(0, 5),
+        pickup_close_time: form.pickup_close_time.slice(0, 5),
       };
+      if (values.pickup_close_time <= values.pickup_open_time) throw new Error(s.pickupOrder);
       if (inherited) unwrap(await supabase.from('settings').insert({ ...values, university_id: target }));
       else unwrap(await supabase.from('settings').update(values).eq('id', row.id));
     },
@@ -103,7 +117,7 @@ function SettingsForm({ row, inherited, target, readOnly }: { row: SettingsRow; 
       void qc.invalidateQueries({ queryKey: ['settings-rows'] });
       void qc.invalidateQueries({ queryKey: ['settings'] });
     },
-    onError: (e) => toast.error(errorMessage(e)),
+    onError: (e) => toast.error(e instanceof Error && e.message === s.pickupOrder ? s.pickupOrder : errorMessage(e)),
   });
   return (
     <Card>
@@ -147,6 +161,26 @@ function SettingsForm({ row, inherited, target, readOnly }: { row: SettingsRow; 
             </Field>
           ))}
         </div>
+        <fieldset className="rounded-lg border border-border p-3">
+          <legend className="px-1 font-bold">{s.pickupWindow}</legend>
+          <p className="mb-3 text-xs text-muted">{s.pickupHint}</p>
+          <div className="grid gap-4 sm:grid-cols-2">
+            {(['pickup_open_time', 'pickup_close_time'] as const).map((key) => (
+              <Field key={key} label={s.fields[key]} htmlFor={`${baseId}-${key}`}>
+                <Input
+                  id={`${baseId}-${key}`}
+                  type="time"
+                  dir="ltr"
+                  className="text-center"
+                  disabled={readOnly}
+                  value={(form[key] ?? '').slice(0, 5)}
+                  onChange={(e) => setForm({ ...form, [key]: e.target.value })}
+                  data-testid={key}
+                />
+              </Field>
+            ))}
+          </div>
+        </fieldset>
         {!readOnly ? (
           <div className="flex justify-end">
             <Button type="submit" variant="secondary" disabled={save.isPending}>
