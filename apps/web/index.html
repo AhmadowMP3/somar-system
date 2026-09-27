@@ -11,6 +11,18 @@
     <link rel="icon" href="/icons/favicon.png" type="image/png" />
     <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png" />
     <title>%APP_NAME%</title>
+    <script>
+      // appearance before first paint (no white flash in dark mode); see src/lib/appearance.ts
+      (function () {
+        try {
+          var d = document.documentElement;
+          var mode = localStorage.getItem('somar.theme') || 'system';
+          var dark = mode === 'dark' || (mode === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches);
+          d.dataset.theme = dark ? 'dark' : 'light';
+          if (localStorage.getItem('somar.text') === 'large') d.dataset.text = 'large';
+        } catch (e) {}
+      })();
+    </script>
     <!--APP_CONFIG-->
   </head>
   <body>

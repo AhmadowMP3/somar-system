@@ -660,3 +660,37 @@ test('18. route map: numbered stops and the path, from the list or the map view;
   await page.getByTestId('admin-route-map').first().click();
   await expect(page.getByRole('dialog').getByTestId('route-map').locator('.route-stop')).toHaveCount(located);
 });
+
+test('19. appearance: dark theme and large text are chosen once and stay after reload; tinted badges render', async ({ page }) => {
+  await page.goto('/login');
+  const html = page.locator('html');
+  await page.getByTestId('appearance').click();
+  await page.getByTestId('theme-dark').click();
+  await expect(html).toHaveAttribute('data-theme', 'dark');
+  await page.getByTestId('text-large').click();
+  await expect(html).toHaveAttribute('data-text', 'large');
+  const bodyBg = await page.evaluate(() => getComputedStyle(document.body).backgroundColor);
+  expect(bodyBg).toBe('rgb(15, 18, 22)');
+  expect(await page.evaluate(() => getComputedStyle(document.documentElement).fontSize)).toBe('19.5px');
+
+  await page.reload();
+  await expect(html).toHaveAttribute('data-theme', 'dark');
+  await expect(html).toHaveAttribute('data-text', 'large');
+
+  await page.getByTestId('appearance').click();
+  await page.getByTestId('theme-light').click();
+  await page.getByTestId('text-normal').click();
+  await expect(html).toHaveAttribute('data-theme', 'light');
+  await expect(html).not.toHaveAttribute('data-text', 'large');
+  await page.keyboard.press('Escape');
+
+  // opacity colours (bg-success/15 …) are generated: an active badge has a tinted, not transparent, background
+  await login(page, ADMIN_CODE, ADMIN_PASSWORD);
+  await expect(page).toHaveURL(/\/admin$/);
+  await pickUniversity(page, uni.id);
+  await page.goto('/admin/routes');
+  const badge = page.getByText('مفعّل', { exact: true }).first();
+  await expect(badge).toBeVisible();
+  const bg = await badge.evaluate((el) => getComputedStyle(el).backgroundColor);
+  expect(bg).not.toBe('rgba(0, 0, 0, 0)');
+});

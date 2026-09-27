@@ -156,7 +156,7 @@ export function RecurringNotifications({ universityId }: { universityId: string 
             </Field>
             <fieldset>
               <legend className="mb-2 text-sm font-semibold">{n.recurringDays}</legend>
-              <div className="flex flex-wrap gap-2">
+              <div className="flex flex-wrap gap-3">
                 {order.map((d) => {
                   const on = draft.days.includes(d);
                   return (
@@ -164,7 +164,7 @@ export function RecurringNotifications({ universityId }: { universityId: string 
                       key={d}
                       className={cn(
                         'flex min-h-touch cursor-pointer items-center gap-2 rounded-lg border px-3 text-sm font-semibold',
-                        on ? 'border-brand-ink bg-brand-ink text-white' : 'border-border bg-bg',
+                        on ? 'border-brand-ink bg-brand-ink text-on-ink' : 'border-border bg-bg',
                       )}
                     >
                       <input
@@ -197,7 +197,7 @@ export function RecurringNotifications({ universityId }: { universityId: string 
                 {error}
               </p>
             ) : null}
-            <div className="flex justify-end gap-2">
+            <div className="flex justify-end gap-3">
               <Button type="button" variant="ghost" onClick={() => setDraft(null)}>
                 {t.common.cancel}
               </Button>

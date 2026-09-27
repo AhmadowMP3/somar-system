@@ -199,7 +199,7 @@ export function PickupPage() {
               <ListSkeleton rows={1} />
             ) : needsReturn ? (
               <>
-                <div role="radiogroup" aria-label={p.returnTime} className="flex flex-wrap gap-2" data-testid="pickup-return-times">
+                <div role="radiogroup" aria-label={p.returnTime} className="flex flex-wrap gap-3" data-testid="pickup-return-times">
                   {times.map((slot) => (
                     <button
                       key={slot}
@@ -209,7 +209,7 @@ export function PickupPage() {
                       onClick={() => setReturnTime(slot)}
                       className={cn(
                         'num min-h-touch rounded-lg border px-4 text-base font-bold',
-                        returnTime === slot ? 'border-brand-ink bg-brand-ink text-white' : 'border-border bg-bg',
+                        returnTime === slot ? 'border-brand-ink bg-brand-ink text-on-ink' : 'border-border bg-bg',
                       )}
                     >
                       {formatClock(slot)}

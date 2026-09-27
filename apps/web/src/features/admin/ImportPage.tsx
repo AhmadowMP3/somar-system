@@ -116,14 +116,14 @@ function ImportWizard({ universityId }: { universityId: string }) {
   return (
     <div className="space-y-4">
       <PageHeader title={im.title} />
-      <ol className="flex flex-wrap gap-2" aria-label={im.title}>
+      <ol className="flex flex-wrap gap-3" aria-label={im.title}>
         {im.steps.map((label, i) => (
           <li
             key={label}
             aria-current={i === step ? 'step' : undefined}
             className={cn(
               'rounded-full px-3 py-1 text-xs font-bold',
-              i === step ? 'bg-brand-ink text-white' : i < step ? 'bg-success/15 text-success' : 'bg-surface text-muted',
+              i === step ? 'bg-brand-ink text-on-ink' : i < step ? 'bg-success/15 text-success' : 'bg-surface text-muted',
             )}
           >
             <span className="num">{i + 1}</span>. {label}

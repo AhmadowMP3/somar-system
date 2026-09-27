@@ -84,7 +84,7 @@ function PackagesBody({ universityId }: { universityId: string }) {
                       key: 'actions',
                       header: t.common.actions,
                       cell: (r: PackageRow) => (
-                        <div className="flex flex-wrap gap-2">
+                        <div className="flex flex-wrap gap-3">
                           <Button size="sm" onClick={() => setEditing(r)}>
                             <Pencil className="h-4 w-4" aria-hidden />
                             {t.common.edit}
@@ -182,7 +182,7 @@ function PackageDialog({ universityId, pkg, onClose }: { universityId: string; p
           <span className="text-sm font-semibold">{t.common.active}</span>
           <Switch checked={form.is_active} onCheckedChange={(v) => setForm({ ...form, is_active: v })} />
         </label>
-        <div className="flex justify-end gap-2">
+        <div className="flex justify-end gap-3">
           <Button onClick={onClose}>{t.common.cancel}</Button>
           <Button type="submit" variant="secondary" disabled={!valid || save.isPending}>
             {t.common.save}
@@ -249,7 +249,7 @@ function BulkAdjustDialog({ pkg, count, onClose }: { pkg: PackageRow; count: num
           <Field label={t.common.reason} htmlFor={ids.reason}>
             <Textarea id={ids.reason} value={reason} onChange={(e) => setReason(e.target.value)} />
           </Field>
-          <div className="flex justify-end gap-2">
+          <div className="flex justify-end gap-3">
             <Button onClick={onClose}>{t.common.cancel}</Button>
             <Button type="submit" variant="secondary" disabled={delta === 0} data-testid="bulk-next">
               {t.common.next}

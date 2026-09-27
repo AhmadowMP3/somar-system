@@ -6,22 +6,30 @@ export default {
   theme: {
     extend: {
       colors: {
-        brand: { DEFAULT: 'var(--brand-red)', dark: 'var(--brand-red-dark)', ink: 'var(--brand-ink)', silver: 'var(--brand-silver)' },
-        bg: 'var(--bg)',
-        surface: 'var(--surface)',
-        border: 'var(--border)',
-        text: 'var(--text)',
-        muted: 'var(--text-muted)',
-        success: 'var(--success)',
-        danger: 'var(--danger)',
-        warning: 'var(--warning)',
+        // rgb channels so opacity modifiers work (bg-success/15 …); tokens live in styles/index.css
+        brand: {
+          DEFAULT: 'rgb(var(--c-brand-red) / <alpha-value>)',
+          dark: 'rgb(var(--c-brand-red-dark) / <alpha-value>)',
+          ink: 'rgb(var(--c-brand-ink) / <alpha-value>)',
+          silver: 'rgb(var(--c-brand-silver) / <alpha-value>)',
+        },
+        'on-ink': 'rgb(var(--c-on-ink) / <alpha-value>)',
+        bg: 'rgb(var(--c-bg) / <alpha-value>)',
+        surface: 'rgb(var(--c-surface) / <alpha-value>)',
+        border: 'rgb(var(--c-border) / <alpha-value>)',
+        text: 'rgb(var(--c-text) / <alpha-value>)',
+        muted: 'rgb(var(--c-text-muted) / <alpha-value>)',
+        success: 'rgb(var(--c-success) / <alpha-value>)',
+        danger: 'rgb(var(--c-danger) / <alpha-value>)',
+        warning: 'rgb(var(--c-warning) / <alpha-value>)',
       },
       fontFamily: {
         sans: ['"Cairo Variable"', 'system-ui', '"Segoe UI"', 'sans-serif'],
         mono: ['ui-monospace', 'SFMono-Regular', 'Menlo', 'Consolas', 'monospace'],
       },
-      minHeight: { touch: '44px' },
-      minWidth: { touch: '44px' },
+      // generous touch targets (older users): 48px, above the 44px guideline
+      minHeight: { touch: '48px' },
+      minWidth: { touch: '48px' },
     },
   },
   plugins: [animate],

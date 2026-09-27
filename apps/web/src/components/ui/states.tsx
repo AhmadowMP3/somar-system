@@ -83,7 +83,7 @@ export function PageHeader({ title, actions, subtitle }: { title: ReactNode; act
         <h1 className="text-xl font-extrabold text-brand-ink">{title}</h1>
         {subtitle ? <p className="mt-0.5 text-sm text-muted">{subtitle}</p> : null}
       </div>
-      {actions ? <div className="flex flex-wrap gap-2">{actions}</div> : null}
+      {actions ? <div className="flex flex-wrap gap-3">{actions}</div> : null}
     </div>
   );
 }

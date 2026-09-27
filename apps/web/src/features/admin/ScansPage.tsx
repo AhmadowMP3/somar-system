@@ -270,7 +270,7 @@ function CancelDialog({ row, onClose }: { row: ScanLogRow; onClose: () => void }
         <Field label={sc.cancelReason} htmlFor={id}>
           <Textarea id={id} value={reason} onChange={(e) => setReason(e.target.value)} required />
         </Field>
-        <div className="flex justify-end gap-2">
+        <div className="flex justify-end gap-3">
           <Button onClick={onClose}>{t.common.cancel}</Button>
           <Button type="submit" variant="danger" disabled={!reason.trim() || run.isPending}>
             {sc.cancel}

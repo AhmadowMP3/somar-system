@@ -18,7 +18,7 @@ export function PermissionPicker({ value, onChange }: { value: Permission[]; onC
     <fieldset className="space-y-3">
       <legend className="mb-1 text-sm font-semibold">{sv.permissions}</legend>
       <p className="text-xs text-muted">{sv.permissionsHint}</p>
-      <div className="flex flex-wrap gap-2">
+      <div className="flex flex-wrap gap-3">
         <Button type="button" size="sm" variant="outline" onClick={() => onChange([...PERMISSION_KEYS])} data-testid="perm-all">
           {sv.allPages}
         </Button>
@@ -41,7 +41,7 @@ export function PermissionPicker({ value, onChange }: { value: Permission[]; onC
               <span
                 className={cn(
                   'flex h-5 w-5 shrink-0 items-center justify-center rounded border',
-                  on ? 'border-brand-ink bg-brand-ink text-white' : 'border-border',
+                  on ? 'border-brand-ink bg-brand-ink text-on-ink' : 'border-border',
                 )}
                 aria-hidden
               >

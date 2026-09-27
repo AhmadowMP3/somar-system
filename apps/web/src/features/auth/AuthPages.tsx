@@ -4,6 +4,7 @@ import { useEffect, useId, useRef, useState, type FormEvent } from 'react';
 import { Navigate, useLocation, useNavigate } from 'react-router-dom';
 import { checkPassword } from '@somar/shared';
 import { useAuth } from '@/app/auth';
+import { AppearanceMenu } from '@/components/AppearanceMenu';
 import { CreditFooter, InstallButton, Logo } from '@/components/common';
 import { Button, Card, Field, Input } from '@/components/ui/primitives';
 import { t } from '@/i18n/ar';
@@ -16,7 +17,8 @@ const pendingNotice: { value: string | null } = { value: null };
 
 function AuthShell({ title, subtitle, children }: { title: string; subtitle?: string; children: React.ReactNode }) {
   return (
-    <main className="flex min-h-dvh items-center justify-center bg-surface px-4 py-8">
+    <main className="relative flex min-h-dvh items-center justify-center bg-surface px-4 py-8">
+      <AppearanceMenu className="absolute end-3 top-3" />
       <div className="w-full max-w-sm">
         <div className="mb-6 flex flex-col items-center gap-3 text-center">
           <Logo className="h-16" />

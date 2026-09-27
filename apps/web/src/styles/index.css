@@ -4,33 +4,106 @@
 @tailwind components;
 @tailwind utilities;
 
+/*
+ * Colour tokens. Each colour is stored as RGB channels (--c-*) so Tailwind can apply opacity
+ * (bg-success/15 …); the plain --* variables are the same colours for direct CSS/SVG use.
+ * Light is the default; dark applies when chosen, or when the device prefers it and the user
+ * has not picked light explicitly (data-theme is set by the appearance menu before first paint).
+ */
 :root {
-  --brand-red: #c1121f;
-  --brand-red-dark: #8e0d17;
-  --brand-ink: #2b2f36;
-  --brand-silver: #c9cdd3;
-  --bg: #ffffff;
-  --surface: #f6f7f9;
-  --border: #e3e6ea;
-  --text: #14181d;
-  --text-muted: #5b646e;
-  --success: #12805c;
-  --danger: #c1121f;
-  --warning: #b7791f;
+  --c-brand-red: 193 18 31;
+  --c-brand-red-dark: 142 13 23;
+  --c-brand-ink: 43 47 54;
+  --c-on-ink: 255 255 255;
+  --c-brand-silver: 201 205 211;
+  --c-bg: 255 255 255;
+  --c-surface: 244 245 247;
+  --c-border: 214 218 224;
+  --c-text: 20 24 29;
+  --c-text-muted: 74 82 92;
+  --c-success: 15 118 84;
+  --c-danger: 193 18 31;
+  --c-warning: 150 97 20;
+  --scrollbar: 43 47 54;
   color-scheme: light;
+}
+
+:root[data-theme='dark'] {
+  --c-brand-red: 240 82 88;
+  --c-brand-red-dark: 193 18 31;
+  --c-brand-ink: 230 232 235;
+  --c-on-ink: 20 24 29;
+  --c-brand-silver: 84 92 104;
+  --c-bg: 15 18 22;
+  --c-surface: 26 30 36;
+  --c-border: 52 58 67;
+  --c-text: 236 238 241;
+  --c-text-muted: 170 178 189;
+  --c-success: 74 196 148;
+  --c-danger: 245 101 106;
+  --c-warning: 232 176 72;
+  --scrollbar: 170 178 189;
+  color-scheme: dark;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) {
+    --c-brand-red: 240 82 88;
+    --c-brand-red-dark: 193 18 31;
+    --c-brand-ink: 230 232 235;
+    --c-on-ink: 20 24 29;
+    --c-brand-silver: 84 92 104;
+    --c-bg: 15 18 22;
+    --c-surface: 26 30 36;
+    --c-border: 52 58 67;
+    --c-text: 236 238 241;
+    --c-text-muted: 170 178 189;
+    --c-success: 74 196 148;
+    --c-danger: 245 101 106;
+    --c-warning: 232 176 72;
+    --scrollbar: 170 178 189;
+    color-scheme: dark;
+  }
+}
+
+:root {
+  --brand-red: rgb(var(--c-brand-red));
+  --brand-red-dark: rgb(var(--c-brand-red-dark));
+  --brand-ink: rgb(var(--c-brand-ink));
+  --on-ink: rgb(var(--c-on-ink));
+  --brand-silver: rgb(var(--c-brand-silver));
+  --bg: rgb(var(--c-bg));
+  --surface: rgb(var(--c-surface));
+  --border: rgb(var(--c-border));
+  --text: rgb(var(--c-text));
+  --text-muted: rgb(var(--c-text-muted));
+  --success: rgb(var(--c-success));
+  --danger: rgb(var(--c-danger));
+  --warning: rgb(var(--c-warning));
+  /* text size: larger than the browser default for easy reading; «كبير» adds more */
+  font-size: 17px;
+}
+:root[data-text='large'] {
+  font-size: 19.5px;
 }
 
 @layer base {
   html {
     -webkit-tap-highlight-color: transparent;
     font-variant-numeric: lining-nums;
+    scrollbar-color: rgb(var(--scrollbar) / 0.45) transparent;
+    accent-color: var(--brand-red);
   }
   body {
     @apply bg-bg text-text font-sans antialiased;
     min-height: 100dvh;
+    line-height: 1.65;
+  }
+  ::selection {
+    background: rgb(var(--c-brand-red) / 0.22);
   }
   :focus-visible {
-    outline: 3px solid var(--brand-ink);
+    outline: 3px solid var(--brand-red);
     outline-offset: 2px;
   }
   input,
@@ -38,6 +111,89 @@
   textarea,
   button {
     font: inherit;
+  }
+
+  /* branded scrollbars (Chromium / Safari; Firefox uses scrollbar-color above) */
+  ::-webkit-scrollbar {
+    width: 12px;
+    height: 12px;
+  }
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: rgb(var(--scrollbar) / 0.35);
+    border-radius: 9999px;
+    border: 3px solid transparent;
+    background-clip: content-box;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: rgb(var(--c-brand-red) / 0.7);
+    background-clip: content-box;
+  }
+
+  /* dropdowns: one clear chevron on the leading side, in both directions and themes */
+  select {
+    appearance: none;
+    -webkit-appearance: none;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='20' height='20' viewBox='0 0 24 24' fill='none' stroke='%234a525c' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+    background-size: 20px 20px;
+    background-repeat: no-repeat;
+    background-position: left 14px center;
+  }
+  [dir='ltr'] select {
+    background-position: right 14px center;
+  }
+  :root[data-theme='dark'] select {
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='20' height='20' viewBox='0 0 24 24' fill='none' stroke='%23aab2bd' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+  }
+
+  /* values that read left-to-right (dates, times, links, phone numbers) never get clipped in RTL */
+  input[type='date'],
+  input[type='time'],
+  input[type='datetime-local'],
+  input[type='month'],
+  input[type='url'],
+  input[type='tel'],
+  input[type='email'] {
+    direction: ltr;
+  }
+  input[type='date'],
+  input[type='time'],
+  input[type='datetime-local'] {
+    min-width: 0;
+    padding-inline: 0.75rem;
+    text-align: start;
+  }
+  select option,
+  select optgroup {
+    background: var(--bg);
+    color: var(--text);
+  }
+  select optgroup {
+    font-weight: 700;
+    color: var(--brand-red);
+  }
+
+  /* date / time pickers follow the theme and the brand colour */
+  input[type='date'],
+  input[type='time'],
+  input[type='datetime-local'],
+  input[type='month'] {
+    accent-color: var(--brand-red);
+  }
+  input[type='date']::-webkit-calendar-picker-indicator,
+  input[type='time']::-webkit-calendar-picker-indicator,
+  input[type='datetime-local']::-webkit-calendar-picker-indicator {
+    cursor: pointer;
+    opacity: 0.75;
+    padding: 4px;
+    border-radius: 6px;
+  }
+  /* in dark mode the browser already draws a light picker icon (color-scheme: dark) */
+  input[type='checkbox'],
+  input[type='radio'] {
+    accent-color: var(--brand-red);
   }
 }
 
@@ -52,7 +208,35 @@
   }
 }
 
+/* maps: keep the map itself readable in dark mode, and the controls themed */
+:root[data-theme='dark'] .leaflet-container {
+  background: #1a1e24;
+}
+:root[data-theme='dark'] .leaflet-tile-pane {
+  filter: brightness(0.8) contrast(1.1) saturate(0.85);
+}
+.leaflet-popup-content-wrapper,
+.leaflet-popup-tip,
+.leaflet-bar a {
+  background: var(--bg) !important;
+  color: var(--text) !important;
+}
+.leaflet-popup-content a {
+  color: var(--brand-red) !important;
+  font-weight: 700;
+}
+
 @media print {
+  :root,
+  :root[data-theme='dark'] {
+    --c-bg: 255 255 255;
+    --c-surface: 244 245 247;
+    --c-text: 20 24 29;
+    --c-border: 214 218 224;
+    --c-brand-ink: 43 47 54;
+    --c-on-ink: 255 255 255;
+    color-scheme: light;
+  }
   .no-print {
     display: none !important;
   }

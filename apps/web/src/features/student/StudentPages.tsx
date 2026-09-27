@@ -466,7 +466,7 @@ export function RoutesPage() {
                 role="tab"
                 aria-selected={view === v}
                 onClick={() => setView(v)}
-                className={cn('flex min-h-[36px] items-center gap-1 rounded-md px-3 text-sm font-semibold', view === v ? 'bg-brand-ink text-white' : '')}
+                className={cn('flex min-h-[36px] items-center gap-1 rounded-md px-3 text-sm font-semibold', view === v ? 'bg-brand-ink text-on-ink' : '')}
                 data-testid={`routes-view-${v}`}
               >
                 {v === 'list' ? <ListIcon className="h-4 w-4" aria-hidden /> : <MapIcon className="h-4 w-4" aria-hidden />}
@@ -549,11 +549,11 @@ export function RoutesPage() {
                                         onClick={() => setStop({ route: r, stop: s })}
                                         data-testid="stop-button"
                                       >
-                                        <span className="flex items-center gap-2">
-                                          <MapPinned className="h-4 w-4 text-brand-ink" aria-hidden />
-                                          {s.name}
+                                        <span className="flex min-w-0 items-center gap-2">
+                                          <MapPinned className="h-5 w-5 shrink-0 text-brand-ink" aria-hidden />
+                                          <span className="min-w-0 break-words">{s.name}</span>
                                         </span>
-                                        <span className="num text-sm text-muted">{formatClock(s.departure_time)}</span>
+                                        <span className="num shrink-0 font-semibold text-muted">{formatClock(s.departure_time)}</span>
                                       </button>
                                     </li>
                                   ))}

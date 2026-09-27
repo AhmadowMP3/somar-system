@@ -151,7 +151,7 @@ function StopFormDialog({ universityId, stop, onClose }: { universityId: string;
             ))}
           </Select>
         </Field>
-        <div className="flex justify-end gap-2">
+        <div className="flex justify-end gap-3">
           <Button onClick={onClose}>{t.common.cancel}</Button>
           <Button type="submit" variant="secondary" disabled={save.isPending || !form.name.trim()} data-testid="stop-save">
             {t.common.save}

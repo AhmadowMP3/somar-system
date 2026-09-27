@@ -106,7 +106,7 @@ function RoutesBody({ universityId }: { universityId: string }) {
                   </button>
                   {openIds.has(route.id) ? (
                     <div className="mt-3 space-y-3">
-                      <div className="flex flex-wrap gap-2">
+                      <div className="flex flex-wrap gap-3">
                         <Button size="sm" onClick={() => setEditingRoute(route)}>
                           <Pencil className="h-4 w-4" aria-hidden />
                           {t.common.edit}
@@ -134,10 +134,10 @@ function RoutesBody({ universityId }: { universityId: string }) {
                   {route.route_stops.length ? (
                     <ol className="divide-y divide-border rounded-lg border border-border">
                       {route.route_stops.map((s, i) => (
-                        <li key={s.id} className="flex flex-wrap items-center justify-between gap-2 p-2 text-sm">
-                          <span className="flex items-center gap-2">
-                            <span className="num flex h-7 w-7 items-center justify-center rounded-full bg-surface text-xs font-bold">{i + 1}</span>
-                            <span className="font-semibold">{s.name}</span>
+                        <li key={s.id} className="flex flex-wrap items-center justify-between gap-3 p-3 text-base">
+                          <span className="flex min-w-0 flex-1 basis-56 flex-wrap items-center gap-x-3 gap-y-1">
+                            <span className="num flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-surface text-sm font-bold">{i + 1}</span>
+                            <span className="min-w-0 break-words font-semibold">{s.name}</span>
                             {s.departure_time ? <span className="num text-muted">{formatClock(s.departure_time)}</span> : null}
                             {s.maps_url ? (
                               <a href={s.maps_url} target="_blank" rel="noopener noreferrer" className="text-brand-ink" aria-label={r.mapsUrl}>
@@ -146,7 +146,7 @@ function RoutesBody({ universityId }: { universityId: string }) {
                             ) : null}
                             {s.maps_url && s.lat === null ? <Badge tone="warning">{r.coordsMissing}</Badge> : null}
                           </span>
-                          <span className="flex gap-1">
+                          <span className="flex shrink-0 flex-wrap gap-2">
                             <Button size="icon" variant="ghost" aria-label={r.moveUp} disabled={i === 0 || move.isPending}
                               onClick={() => move.mutate({ a: s, b: route.route_stops[i - 1] as StopRow })}>
                               <ArrowUp className="h-4 w-4" />
@@ -357,7 +357,7 @@ function RouteDialog({ universityId, route, onClose, onSaved }: {
             <span className="text-sm font-semibold">{t.common.active}</span>
             <Switch checked={form.is_active} onCheckedChange={(v) => setForm({ ...form, is_active: v })} />
           </label>
-          <div className="flex justify-end gap-2">
+          <div className="flex justify-end gap-3">
             <Button onClick={onClose}>{t.common.cancel}</Button>
             <Button type="submit" variant="secondary" disabled={save.isPending}>
               {t.common.save}

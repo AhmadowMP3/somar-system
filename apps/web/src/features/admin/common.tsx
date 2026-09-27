@@ -90,7 +90,7 @@ export const WEEK_DAYS = [6, 7, 1, 2, 3, 4, 5];
 
 export function DayToggles({ value, onChange }: { value: number[]; onChange: (days: number[]) => void }) {
   return (
-    <div className="flex flex-wrap gap-2">
+    <div className="flex flex-wrap gap-3">
       {WEEK_DAYS.map((d) => {
         const on = value.includes(d);
         return (
@@ -101,7 +101,7 @@ export function DayToggles({ value, onChange }: { value: number[]; onChange: (da
             onClick={() => onChange(on ? value.filter((x) => x !== d) : [...value, d].sort((a, b) => a - b))}
             className={
               on
-                ? 'min-h-touch rounded-lg bg-brand-ink px-3 text-sm font-semibold text-white'
+                ? 'min-h-touch rounded-lg bg-brand-ink px-3 text-sm font-semibold text-on-ink'
                 : 'min-h-touch rounded-lg border border-border px-3 text-sm'
             }
           >

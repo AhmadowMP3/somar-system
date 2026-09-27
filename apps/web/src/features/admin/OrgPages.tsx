@@ -178,7 +178,7 @@ function UniversityDialog({ university, onClose }: { university: University | nu
             <Switch checked={active} onCheckedChange={setActive} />
           </label>
         ) : null}
-        <div className="flex justify-end gap-2">
+        <div className="flex justify-end gap-3">
           <Button onClick={onClose}>{t.common.cancel}</Button>
           <Button type="submit" variant="secondary" disabled={save.isPending || !name.trim() || !prefixValid}>
             {save.isPending ? t.common.saving : t.common.save}
@@ -327,7 +327,7 @@ function NamedItemsBody({
           <Field label={nameLabel} htmlFor={inputId}>
             <Input id={inputId} value={name} onChange={(e) => setName(e.target.value)} required />
           </Field>
-          <div className="flex justify-end gap-2">
+          <div className="flex justify-end gap-3">
             <Button onClick={() => setEditing(null)}>{t.common.cancel}</Button>
             <Button type="submit" variant="secondary" disabled={save.isPending || !name.trim()}>
               {t.common.save}

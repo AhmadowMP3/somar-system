@@ -49,7 +49,7 @@ export function Dialog({
             </DialogPrimitive.Close>
           </div>
           {children}
-          {footer ? <div className="mt-5 flex flex-wrap justify-end gap-2">{footer}</div> : null}
+          {footer ? <div className="mt-5 flex flex-wrap justify-end gap-3">{footer}</div> : null}
         </DialogPrimitive.Content>
       </DialogPrimitive.Portal>
     </DialogPrimitive.Root>

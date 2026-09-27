@@ -120,7 +120,7 @@ function SupervisorsBody({ universityId }: { universityId: string }) {
                       key: 'actions',
                       header: t.common.actions,
                       cell: (r: StaffRow) => (
-                        <div className="flex flex-wrap gap-2">
+                        <div className="flex flex-wrap gap-3">
                           {!hasStudent(r) ? (
                             <Button size="sm" variant="secondary" onClick={() => setEditingPerms(r)} data-testid="edit-permissions">
                               <ShieldCheck className="h-4 w-4" aria-hidden />
@@ -201,7 +201,7 @@ function CreateDialog({ universityId, onClose, onDone }: { universityId: string;
         </Field>
         <PermissionPicker value={permissions} onChange={setPermissions} />
         {!permissions.length ? <p className="text-sm font-semibold text-danger">{sv.permissionsRequired}</p> : null}
-        <div className="flex justify-end gap-2">
+        <div className="flex justify-end gap-3">
           <Button onClick={onClose}>{t.common.cancel}</Button>
           <Button type="submit" variant="secondary" disabled={!valid || save.isPending} data-testid="supervisor-save">
             {t.common.save}
@@ -271,7 +271,7 @@ function ResetDialog({ row, onClose }: { row: StaffRow; onClose: () => void }) {
         <Field label={t.auth.newPassword} htmlFor={id}>
           <Input id={id} dir="ltr" className="text-start" value={password} onChange={(e) => setPassword(e.target.value)} />
         </Field>
-        <div className="flex justify-end gap-2">
+        <div className="flex justify-end gap-3">
           <Button onClick={onClose}>{t.common.cancel}</Button>
           <Button type="submit" variant="secondary" disabled={password.length < 6 || save.isPending}>
             {t.common.save}

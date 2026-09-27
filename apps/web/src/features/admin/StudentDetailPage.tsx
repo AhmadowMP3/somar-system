@@ -274,7 +274,7 @@ export default function StudentDetailPage() {
 
             <Card>
               <CardTitle>{t.common.actions}</CardTitle>
-              <div className="flex flex-wrap gap-2">
+              <div className="flex flex-wrap gap-3">
                 {isAdmin ? (
                   <>
                     <ActionButton icon={<PackageIcon className="h-4 w-4" />} onClick={() => setAction('assign')} testId="assign-package">
@@ -468,7 +468,7 @@ function AssignDialog({ student, onClose, onDone }: { student: StudentFull; onCl
         <Field label={t.common.notes} htmlFor={ids.note}>
           <Textarea id={ids.note} value={note} onChange={(e) => setNote(e.target.value)} />
         </Field>
-        <div className="flex justify-end gap-2">
+        <div className="flex justify-end gap-3">
           <Button onClick={onClose}>{t.common.cancel}</Button>
           <Button type="submit" variant="secondary" disabled={!packageId || save.isPending} data-testid="assign-submit">
             {t.common.save}
@@ -538,7 +538,7 @@ function AdjustDialog({ subscriptionId, onClose, onDone }: { subscriptionId: str
         <Field label={t.common.reason} htmlFor={ids.reason}>
           <Textarea id={ids.reason} value={reason} onChange={(e) => setReason(e.target.value)} />
         </Field>
-        <div className="flex justify-end gap-2">
+        <div className="flex justify-end gap-3">
           <Button onClick={onClose}>{t.common.cancel}</Button>
           <Button type="submit" variant="secondary" disabled={delta === 0 || save.isPending}>
             {t.common.save}

@@ -296,6 +296,17 @@ export const t = {
     at: (stop: string, time: string) => `${stop} — الساعة ${time}`,
   },
 
+  appearance: {
+    title: 'المظهر وحجم الخط',
+    theme: 'المظهر',
+    light: 'فاتح',
+    dark: 'داكن',
+    system: 'حسب الجهاز',
+    textSize: 'حجم الخط',
+    normal: 'عادي',
+    large: 'كبير',
+  },
+
   routeMap: {
     title: 'خريطة الخط',
     list: 'قائمة',

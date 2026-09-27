@@ -27,6 +27,7 @@ import {
 import { useState, type ReactNode } from 'react';
 import { NavLink, Outlet, useNavigate } from 'react-router-dom';
 import { CreditFooter, InstallButton, Logo, NotificationBell, OfflineBanner, UniversityPicker } from '@/components/common';
+import { AppearanceMenu } from '@/components/AppearanceMenu';
 import { Button } from '@/components/ui/primitives';
 import { t } from '@/i18n/ar';
 import { cn } from '@/lib/utils';
@@ -89,6 +90,7 @@ export function StudentLayout() {
         <Logo />
         <div className="flex items-center gap-2">
           <InstallButton />
+          <AppearanceMenu />
           <NotificationBell to="/notifications" />
         </div>
       </TopBar>
@@ -122,6 +124,7 @@ export function ScanLayout() {
       <TopBar>
         <Logo />
         <InstallButton className="ms-auto" />
+        <AppearanceMenu />
         <Button
           variant="ghost"
           size="sm"
@@ -185,7 +188,7 @@ function SideNav({ onNavigate }: { onNavigate?: () => void }) {
               className={({ isActive }) =>
                 cn(
                   'flex min-h-touch items-center gap-3 rounded-lg px-3 text-sm font-semibold',
-                  isActive ? 'bg-brand-ink text-white' : 'text-text hover:bg-surface',
+                  isActive ? 'bg-brand-ink text-on-ink' : 'text-text hover:bg-surface',
                 )
               }
             >
@@ -218,6 +221,7 @@ export function AdminLayout() {
           <Logo className="h-8" />
           <div className="ms-auto flex items-center gap-2">
             <InstallButton />
+            <AppearanceMenu />
             <UniversityPicker className="hidden sm:block" />
             <NotificationBell to="/admin/notifications" />
             <span className="hidden text-sm text-muted md:inline">

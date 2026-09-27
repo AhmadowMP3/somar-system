@@ -107,7 +107,7 @@ export function SearchPicker({
                   onClick={() => pick(item.id)}
                   className={cn(
                     'flex min-h-touch w-full items-center justify-between gap-2 px-3 text-start',
-                    item.id === value ? 'bg-brand-ink text-white' : 'hover:bg-surface',
+                    item.id === value ? 'bg-brand-ink text-on-ink' : 'hover:bg-surface',
                   )}
                 >
                   <span>{item.name}</span>

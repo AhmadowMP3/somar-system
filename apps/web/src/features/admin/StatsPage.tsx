@@ -62,7 +62,7 @@ function StatsBody({ universityId }: { universityId: string }) {
             onClick={() => setPicked(d)}
             className={cn(
               'min-h-touch shrink-0 rounded-lg border px-3 text-sm font-semibold',
-              d === day ? 'border-brand-ink bg-brand-ink text-white' : 'border-border bg-bg',
+              d === day ? 'border-brand-ink bg-brand-ink text-on-ink' : 'border-border bg-bg',
             )}
             data-testid={`stats-day-${d}`}
           >

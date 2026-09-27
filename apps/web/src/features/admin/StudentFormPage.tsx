@@ -239,7 +239,7 @@ function StudentForm({ universityId, studentId, initial }: { universityId: strin
           <Field label={t.student.residence} htmlFor={ids.residence} className="md:col-span-2">
             <Textarea id={ids.residence} value={form.residence_text} onChange={(e) => set({ residence_text: e.target.value })} />
           </Field>
-          <div className="flex justify-end gap-2 md:col-span-2">
+          <div className="flex justify-end gap-3 md:col-span-2">
             <Button onClick={() => navigate(-1)}>{t.common.cancel}</Button>
             <Button type="submit" variant="secondary" disabled={save.isPending}>
               {save.isPending ? t.common.saving : t.common.save}
