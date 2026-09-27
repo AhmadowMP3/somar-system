@@ -16,7 +16,7 @@ export async function runBootstrapAdmin(env: NodeJS.ProcessEnv = process.env): P
   const password = env.BOOTSTRAP_ADMIN_PASSWORD ?? '';
   if (!cfg.SUPABASE_URL || !cfg.SUPABASE_SERVICE_ROLE_KEY) throw new Error('SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY are required');
   if (!isPasswordValid(password, null, 8)) {
-    throw new Error('BOOTSTRAP_ADMIN_PASSWORD must be at least 8 characters with an uppercase letter, a digit and a symbol');
+    throw new Error('BOOTSTRAP_ADMIN_PASSWORD must be at least 8 characters with an uppercase letter and a digit');
   }
   const db = createAdminClient(cfg);
   const { data: existing, error } = await db.from('profiles').select('id').ilike('login_code', code).maybeSingle();

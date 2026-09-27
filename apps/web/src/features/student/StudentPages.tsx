@@ -1,11 +1,25 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { BellRing, CalendarClock, ChevronDown, ChevronLeft, KeyRound, LogOut, MapPinned, Navigation, Package as PackageIcon, ScanLine } from 'lucide-react';
+import {
+  BellRing,
+  CalendarClock,
+  Download,
+  IdCard,
+  ChevronDown,
+  ChevronLeft,
+  KeyRound,
+  LogOut,
+  MapPinned,
+  Navigation,
+  Package as PackageIcon,
+  ScanLine,
+} from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { formatClock, formatDate, formatDateTime, formatPhoneDisplay, formatTime } from '@somar/shared';
 import { useAuth } from '@/app/auth';
 import { DirectionBadge } from '@/components/common';
 import { QrCode } from '@/components/QrCode';
+import { CardFace, downloadCard, toDataUri, type CardValues } from '@/components/StudentCard';
 import { Dialog, useToast } from '@/components/ui/overlay';
 import { Badge, Button, Card, CardTitle, Skeleton } from '@/components/ui/primitives';
 import { EmptyState, PageHeader, QueryState } from '@/components/ui/states';
@@ -73,6 +87,7 @@ export function StudentHome() {
   const query = useDashboard();
   const { canScan } = useAuth();
   const [qrOpen, setQrOpen] = useState(false);
+  const [cardOpen, setCardOpen] = useState(false);
   return (
     <QueryState query={query} skeleton={<HomeSkeleton />}>
       {(d) => (
@@ -99,6 +114,10 @@ export function StudentHome() {
               <QrCode token={d.student.qr_token} className="h-52 w-52" label={t.student.showQrHint} />
             </button>
             <p className="text-xs text-muted">{t.student.showQrHint}</p>
+            <Button variant="secondary" className="w-full" onClick={() => setCardOpen(true)} data-testid="my-card">
+              <IdCard className="h-5 w-5" aria-hidden />
+              {t.cards.myCard}
+            </Button>
           </Card>
 
           <Card>
@@ -155,6 +174,16 @@ export function StudentHome() {
             <ChevronLeft className="h-5 w-5 text-muted" aria-hidden />
           </Link>
 
+          <Dialog
+            open={cardOpen}
+            onOpenChange={setCardOpen}
+            title={t.cards.myCard}
+            description={t.cards.myCardHint}
+            className="sm:max-w-2xl"
+          >
+            {cardOpen ? <MyCard student={d.student} /> : null}
+          </Dialog>
+
           <Dialog open={qrOpen} onOpenChange={setQrOpen} title={d.student.transport_number}>
             <div className="flex justify-center">
               <QrCode token={d.student.qr_token} className="w-full max-w-sm" label={t.student.showQrHint} />
@@ -166,6 +195,44 @@ export function StudentHome() {
   );
 }
 
+/** The student's own transport card on the owner's design, downloadable as an image. */
+function MyCard({ student }: { student: Dashboard['student'] }) {
+  const toast = useToast();
+  const photo = useQuery({
+    queryKey: ['card-photo', student.photo_path],
+    queryFn: async () => toDataUri(await signedUrl(PHOTO_BUCKET, student.photo_path)),
+    staleTime: 5 * 60_000,
+  });
+  const card: CardValues = {
+    full_name: student.full_name,
+    transport_number: student.transport_number,
+    college: student.college ?? '',
+    qr_token: student.qr_token,
+    photo: photo.data ?? null,
+  };
+  const download = useMutation({
+    mutationFn: () => downloadCard(card),
+    onSuccess: () => toast.success(t.cards.downloaded),
+    onError: (e) => toast.error(errorMessage(e)),
+  });
+  return (
+    <div className="space-y-4">
+      {photo.isLoading ? <Skeleton className="aspect-[1034/652] w-full" /> : <CardFace card={card} className="w-full shadow-md" />}
+      <Button
+        variant="primary"
+        size="lg"
+        className="w-full"
+        disabled={photo.isLoading || download.isPending}
+        onClick={() => download.mutate()}
+        data-testid="download-card"
+      >
+        <Download className="h-5 w-5" aria-hidden />
+        {download.isPending ? t.cards.downloading : t.cards.download}
+      </Button>
+    </div>
+  );
+}
+
 export function TripsPage() {
   const query = useDashboard();
   return (
@@ -173,9 +240,7 @@ export function TripsPage() {
       <PageHeader title={t.student.tripsTitle} />
       <QueryState
         query={query}
-        empty={(d) =>
-          d.recent_scans.length ? null : <EmptyState title={t.student.noTrips} hint={t.student.noTripsHint} />
-        }
+        empty={(d) => (d.recent_scans.length ? null : <EmptyState title={t.student.noTrips} hint={t.student.noTripsHint} />)}
       >
         {(d) => {
           const days = new Map<string, Dashboard['recent_scans']>();
@@ -210,7 +275,6 @@ export function TripsPage() {
     </div>
   );
 }
-
 type PackageRow = { id: string; name: string; trips_per_week: number; price: number | null; semester_start: string; semester_end: string };
 
 export function PackagesPage() {
@@ -281,7 +345,6 @@ export type StopRow = {
   departure_time: string | null;
   area_id: string | null;
 };
-
 type LibraryStopRef = { name: string; maps_url: string | null; lat: number | null; lng: number | null; area_id: string | null };
 type RawRouteStop = Omit<StopRow, 'name' | 'maps_url' | 'lat' | 'lng' | 'area_id'> &
   Partial<LibraryStopRef> & { stop: LibraryStopRef | null };
@@ -336,6 +399,9 @@ export function useStopLibrary(universityId: string | null | undefined) {
   });
 }
 
+/** Outbound routes first, then return routes; a route running both ways is listed in both. */
+const ROUTE_GROUPS = ['outbound', 'return'] as const;
+
 export function RoutesPage() {
   const { me } = useAuth();
   const query = useRoutes(me?.student?.university_id, true);
@@ -353,56 +419,83 @@ export function RoutesPage() {
       <PageHeader title={t.student.routesTitle} />
       <QueryState query={query} empty={(rows) => (rows.length ? null : <EmptyState title={t.student.noRoutes} />)}>
         {(rows) => (
-          <ul className="space-y-3">
-            {rows.map((r) => (
-              <li key={r.id}>
-                <Card className="p-3">
-                  <button
-                    type="button"
-                    className="flex min-h-touch w-full items-center justify-between gap-2 text-start"
-                    aria-expanded={openIds.has(r.id)}
-                    onClick={() => toggle(r.id)}
-                    data-testid="route-toggle"
-                  >
-                    <span className="flex flex-wrap items-center gap-2">
-                      <span className="font-bold">{r.name}</span>
-                      <Badge tone="info">{t.admin.routes.directions[r.direction]}</Badge>
-                      {r.departure_time ? (
-                        <span className="num flex items-center gap-1 text-sm font-semibold">
-                          <CalendarClock className="h-4 w-4" aria-hidden />
-                          {formatClock(r.departure_time)}
-                        </span>
-                      ) : null}
-                    </span>
-                    <ChevronDown className={cn('h-5 w-5 shrink-0 text-muted transition-transform', openIds.has(r.id) && 'rotate-180')} aria-hidden />
-                  </button>
-                  {!openIds.has(r.id) ? null : r.notes ? <p className="my-2 text-sm text-muted">{r.notes}</p> : null}
-                  {!openIds.has(r.id) ? null : r.route_stops.length ? (
-                    <ol className="space-y-1">
-                      {r.route_stops.map((s) => (
-                        <li key={s.id}>
-                          <button
-                            type="button"
-                            className="flex min-h-touch w-full items-center justify-between gap-2 rounded-lg px-2 text-start hover:bg-surface"
-                            onClick={() => setStop({ route: r, stop: s })}
-                            data-testid="stop-button"
-                          >
-                            <span className="flex items-center gap-2">
-                              <MapPinned className="h-4 w-4 text-brand-ink" aria-hidden />
-                              {s.name}
-                            </span>
-                            <span className="num text-sm text-muted">{formatClock(s.departure_time)}</span>
-                          </button>
-                        </li>
-                      ))}
-                    </ol>
+          <div className="space-y-6">
+            {ROUTE_GROUPS.map((group) => {
+              const list = rows
+                .filter((r) => r.direction === group || r.direction === 'both')
+                .sort((x, y) => (x.departure_time ?? '99').localeCompare(y.departure_time ?? '99') || x.name.localeCompare(y.name, 'ar'));
+              return (
+                <section key={group} aria-labelledby={`routes-${group}`} data-testid={`routes-${group}`}>
+                  <h2 id={`routes-${group}`} className="mb-2 flex items-center gap-2 text-lg font-extrabold text-brand-ink">
+                    {t.student.routeGroups[group]}
+                    <Badge>
+                      <span className="num">{list.length}</span>
+                    </Badge>
+                  </h2>
+                  {list.length ? (
+                    <ul className="space-y-3">
+                      {list.map((r) => {
+                        const key = `${group}:${r.id}`;
+                        return (
+                          <li key={key}>
+                            <Card className="p-3">
+                              <button
+                                type="button"
+                                className="flex min-h-touch w-full items-center justify-between gap-2 text-start"
+                                aria-expanded={openIds.has(key)}
+                                onClick={() => toggle(key)}
+                                data-testid="route-toggle"
+                              >
+                                <span className="flex flex-wrap items-center gap-2">
+                                  <span className="font-bold">{r.name}</span>
+                                  <Badge tone="info">{t.admin.routes.directions[r.direction]}</Badge>
+                                  {r.departure_time ? (
+                                    <span className="num flex items-center gap-1 text-sm font-semibold">
+                                      <CalendarClock className="h-4 w-4" aria-hidden />
+                                      {formatClock(r.departure_time)}
+                                    </span>
+                                  ) : null}
+                                </span>
+                                <ChevronDown
+                                  className={cn('h-5 w-5 shrink-0 text-muted transition-transform', openIds.has(key) && 'rotate-180')}
+                                  aria-hidden
+                                />
+                              </button>
+                              {!openIds.has(key) ? null : r.notes ? <p className="my-2 text-sm text-muted">{r.notes}</p> : null}
+                              {!openIds.has(key) ? null : r.route_stops.length ? (
+                                <ol className="space-y-1">
+                                  {r.route_stops.map((s) => (
+                                    <li key={s.id}>
+                                      <button
+                                        type="button"
+                                        className="flex min-h-touch w-full items-center justify-between gap-2 rounded-lg px-2 text-start hover:bg-surface"
+                                        onClick={() => setStop({ route: r, stop: s })}
+                                        data-testid="stop-button"
+                                      >
+                                        <span className="flex items-center gap-2">
+                                          <MapPinned className="h-4 w-4 text-brand-ink" aria-hidden />
+                                          {s.name}
+                                        </span>
+                                        <span className="num text-sm text-muted">{formatClock(s.departure_time)}</span>
+                                      </button>
+                                    </li>
+                                  ))}
+                                </ol>
+                              ) : (
+                                <p className="text-sm text-muted">{t.student.noStops}</p>
+                              )}
+                            </Card>
+                          </li>
+                        );
+                      })}
+                    </ul>
                   ) : (
-                    <p className="text-sm text-muted">{t.student.noStops}</p>
+                    <p className="text-sm text-muted">{t.student.noRoutesInGroup}</p>
                   )}
-                </Card>
-              </li>
-            ))}
-          </ul>
+                </section>
+              );
+            })}
+          </div>
         )}
       </QueryState>
       <Dialog open={Boolean(stop)} onOpenChange={(o) => !o && setStop(null)} title={stop?.stop.name ?? ''} description={stop?.route.name}>
@@ -427,7 +520,6 @@ export function RoutesPage() {
     </div>
   );
 }
-
 type NotificationRow = { id: string; title: string; body: string; type: string; created_at: string; notification_reads: { profile_id: string }[] };
 
 export function PushCard() {

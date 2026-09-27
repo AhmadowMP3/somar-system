@@ -87,7 +87,7 @@ Copy `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY` and `VITE_VAPID_PUBLIC_KEY` into Co
 6. Image size: about **305 MB unpacked** (`node:22-slim` base). Docker Desktop's size column shows more because it also counts the compressed layer blobs.
 
 ### 1.8 Create the first admin
-Set `BOOTSTRAP_ADMIN_CODE` (default `ADMIN`) and a strong `BOOTSTRAP_ADMIN_PASSWORD` (8+ chars, uppercase, digit, symbol), then run
+Set `BOOTSTRAP_ADMIN_CODE` (default `ADMIN`) and a strong `BOOTSTRAP_ADMIN_PASSWORD` (8+ chars, uppercase, digit), then run
 once in the running container (Coolify → Terminal):
 ```bash
 node apps/api/dist/bootstrap-admin.js
@@ -121,7 +121,7 @@ Log in as the admin → **الجامعات** (name, logo, transport prefix e.g. 
 5. **متغيرات البيئة في Coolify**: انسخ `SUPABASE_URL` ومفتاح `anon` ومفتاح `service_role`، وأضف متغيرات `VITE_*` كـ **متغيرات بناء (Build Variable)** لأنها تُدمج في الواجهة وقت البناء. (الخادم يحقن أيضاً إعدادات وقت التشغيل في الصفحة، لذا يمكن تغيير رابط Supabase دون إعادة البناء.)
 6. **مفاتيح الإشعارات**: شغّل `npm run generate:vapid` وضع القيم الثلاث في المتغيرات.
 7. **النشر على Coolify**: نوع البناء Dockerfile، المنفذ 8080، مسار الفحص `/api/healthz`، اربط النطاق وفعّل **HTTPS** (إلزامي للكاميرا والموقع وعامل الخدمة). استخدم نسخة واحدة فقط.
-8. **إنشاء المدير الأول**: ضع `BOOTSTRAP_ADMIN_CODE` و`BOOTSTRAP_ADMIN_PASSWORD` (8 أحرف على الأقل مع حرف كبير ورقم ورمز) ثم نفّذ داخل الحاوية: `node apps/api/dist/bootstrap-admin.js`.
+8. **إنشاء المدير الأول**: ضع `BOOTSTRAP_ADMIN_CODE` و`BOOTSTRAP_ADMIN_PASSWORD` (8 أحرف على الأقل مع حرف كبير ورقم) ثم نفّذ داخل الحاوية: `node apps/api/dist/bootstrap-admin.js`.
 9. **الإعداد الأول**: ادخل كمدير ← الجامعات (الاسم، الشعار، البادئة، بداية الأسبوع) ← الكليات ← المناطق ← الباقات ← الخطوط ← استيراد ملف الطلاب ← ربط المناطق ← تعيين الباقات ← طباعة البطاقات (طباعة ← حفظ كـ PDF من المتصفح).
 10. **حل المشاكل**:
     - الكاميرا لا تعمل على iPhone: يجب أن يكون الموقع HTTPS مع السماح بالكاميرا من إعدادات Safari. المسح اليدوي بالرقم يعمل دائماً.

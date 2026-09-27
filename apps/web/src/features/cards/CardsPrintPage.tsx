@@ -2,12 +2,11 @@ import { useQuery } from '@tanstack/react-query';
 import { ArrowRight, Printer } from 'lucide-react';
 import { useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { formatDate } from '@somar/shared';
-import { QrCode } from '@/components/QrCode';
+import { CardFace, toDataUri } from '@/components/StudentCard';
 import { Button, Select } from '@/components/ui/primitives';
 import { EmptyState, ErrorState, ListSkeleton } from '@/components/ui/states';
 import { t } from '@/i18n/ar';
-import { LOGO_BUCKET, PHOTO_BUCKET, signedUrl, supabase, unwrap } from '@/lib/supabase';
+import { PHOTO_BUCKET, signedUrl, supabase, unwrap } from '@/lib/supabase';
 
 type CardData = {
   id: string;
@@ -15,33 +14,13 @@ type CardData = {
   transport_number: string;
   qr_token: string;
   college: string;
-  package_name: string | null;
-  ends_on: string | null;
   photo: string | null;
-  logo: string | null;
 };
-
-async function toDataUri(url: string | null): Promise<string | null> {
-  if (!url) return null;
-  try {
-    const res = await fetch(url);
-    if (!res.ok) return null;
-    const blob = await res.blob();
-    return await new Promise<string>((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onload = () => resolve(reader.result as string);
-      reader.onerror = () => reject(reader.error);
-      reader.readAsDataURL(blob);
-    });
-  } catch {
-    return null;
-  }
-}
 
 async function loadCards(params: URLSearchParams): Promise<CardData[]> {
   let q = supabase
     .from('students')
-    .select('id, full_name, transport_number, qr_token, photo_path, university_id, colleges(name), universities(logo_path)')
+    .select('id, full_name, transport_number, qr_token, photo_path, colleges(name)')
     .eq('is_active', true)
     .order('transport_number');
   const ids = params.get('ids');
@@ -65,24 +44,8 @@ async function loadCards(params: URLSearchParams): Promise<CardData[]> {
     qr_token: string;
     photo_path: string | null;
     colleges: { name: string } | null;
-    universities: { logo_path: string | null } | null;
   }[];
   if (!students.length) return [];
-
-  const balances = unwrap(
-    await supabase
-      .from('v_student_balance')
-      .select('student_id, package_name, subscription_ends_on')
-      .in('student_id', students.map((s) => s.id)),
-  ) as { student_id: string; package_name: string | null; subscription_ends_on: string | null }[];
-  const byId = new Map(balances.map((b) => [b.student_id, b]));
-
-  const logoCache = new Map<string, Promise<string | null>>();
-  const logoFor = (path: string | null | undefined) => {
-    if (!path) return Promise.resolve(null);
-    if (!logoCache.has(path)) logoCache.set(path, signedUrl(LOGO_BUCKET, path).then(toDataUri));
-    return logoCache.get(path) as Promise<string | null>;
-  };
 
   return Promise.all(
     students.map(async (s) => ({
@@ -91,10 +54,7 @@ async function loadCards(params: URLSearchParams): Promise<CardData[]> {
       transport_number: s.transport_number,
       qr_token: s.qr_token,
       college: s.colleges?.name ?? '',
-      package_name: byId.get(s.id)?.package_name ?? null,
-      ends_on: byId.get(s.id)?.subscription_ends_on ?? null,
       photo: await toDataUri(await signedUrl(PHOTO_BUCKET, s.photo_path)),
-      logo: await logoFor(s.universities?.logo_path),
     })),
   );
 }
@@ -105,41 +65,7 @@ const PRINT_CSS = {
 };
 
 function TransportCard({ card }: { card: CardData }) {
-  return (
-    <article
-      className="transport-card relative flex overflow-hidden rounded-[3mm] border border-border bg-white text-[#14181D]"
-      style={{ width: '85.6mm', height: '54mm' }}
-      data-testid="transport-card"
-    >
-      <div className="absolute inset-x-0 top-0 h-[2.2mm] bg-brand" aria-hidden />
-      <div className="flex flex-1 flex-col p-[3mm] pt-[4mm]">
-        <div className="mb-[1.5mm] flex items-center gap-[2mm]">
-          {card.logo ? <img src={card.logo} alt="" className="h-[7mm] w-[7mm] object-contain" /> : null}
-          <img src="/icons/logo.png" alt="" className="h-[7mm] w-auto" />
-          <span className="text-[2.4mm] font-bold leading-tight text-brand-ink">{t.cards.transportCard}</span>
-        </div>
-        <div className="flex flex-1 gap-[2.5mm]">
-          <div className="h-[22mm] w-[18mm] shrink-0 overflow-hidden rounded-[1.5mm] bg-surface">
-            {card.photo ? <img src={card.photo} alt="" className="h-full w-full object-cover" data-testid="card-photo" /> : null}
-          </div>
-          <div className="min-w-0 flex-1 leading-tight">
-            <p className="text-[3.2mm] font-extrabold">{card.full_name}</p>
-            <p className="mt-[1mm] text-[2.4mm] text-[#5B646E]">{card.college}</p>
-            <p className="mt-[0.6mm] text-[2.4mm] text-[#5B646E]">{card.package_name ?? t.cards.noPackage}</p>
-          </div>
-        </div>
-        <div className="flex items-end justify-between">
-          <p className="num font-mono text-[5mm] font-extrabold tracking-wider text-brand-ink" dir="ltr">
-            {card.transport_number}
-          </p>
-        </div>
-        {card.ends_on ? <p className="text-[2.3mm] font-semibold">{t.student.validUntil(formatDate(card.ends_on))}</p> : null}
-      </div>
-      <div className="flex w-[25mm] shrink-0 items-center justify-center p-[1mm]">
-        <QrCode token={card.qr_token} className="h-[23mm] w-[23mm]" label={card.transport_number} />
-      </div>
-    </article>
-  );
+  return <CardFace card={card} style={{ width: '85.6mm', height: '54mm' }} />;
 }
 
 function chunk<T>(items: T[], size: number): T[][] {

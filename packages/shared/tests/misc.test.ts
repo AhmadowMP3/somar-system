@@ -66,7 +66,8 @@ describe('password policy', () => {
         .map((r) => r.key);
     expect(failed('abcdef1!')).toEqual(['upper']);
     expect(failed('Abcdefg!')).toEqual(['digit']);
-    expect(failed('Abcdefg1')).toEqual(['symbol']);
+    // symbols are allowed but not required
+    expect(failed('Abcdefg1')).toEqual([]);
     expect(failed('Ab1!')).toEqual(['minLength']);
     expect(failed('Abcdef1!', 'Abcdef1?')).toEqual(['match']);
   });

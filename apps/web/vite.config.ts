@@ -41,7 +41,7 @@ export default defineConfig({
       registerType: 'autoUpdate',
       injectRegister: false,
       injectManifest: {
-        globPatterns: ['**/*.{js,css,woff2,png,svg,ico}'],
+        globPatterns: ['**/*.{js,css,woff2,png,svg,ico}', 'card/*.jpg'],
         maximumFileSizeToCacheInBytes: 3 * 1024 * 1024,
       },
       manifest: {

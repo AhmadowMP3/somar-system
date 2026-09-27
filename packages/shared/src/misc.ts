@@ -15,14 +15,13 @@ export function loginCodeToEmail(loginCode: string, domain: string): string {
   return `${loginCode.trim().toLowerCase()}@${domain.trim().toLowerCase()}`;
 }
 
-export type PasswordRule = { key: 'minLength' | 'upper' | 'digit' | 'symbol' | 'match'; label: string; ok: boolean };
+export type PasswordRule = { key: 'minLength' | 'upper' | 'digit' | 'match'; label: string; ok: boolean };
 
 export function checkPassword(password: string, confirm: string | null, minLength: number): PasswordRule[] {
   const rules: PasswordRule[] = [
     { key: 'minLength', label: arShared.password.minLength(minLength), ok: password.length >= minLength },
     { key: 'upper', label: arShared.password.upper, ok: /[A-Z]/.test(password) },
     { key: 'digit', label: arShared.password.digit, ok: /\d/.test(password) },
-    { key: 'symbol', label: arShared.password.symbol, ok: /[^A-Za-z0-9\s]/.test(password) },
   ];
   if (confirm !== null) {
     rules.push({ key: 'match', label: arShared.password.match, ok: password.length > 0 && password === confirm });

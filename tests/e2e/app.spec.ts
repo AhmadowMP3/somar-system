@@ -7,6 +7,7 @@ import {
   createE2EUniversity,
   demoUniversityId,
   jpegFile,
+  service,
   STAFF_PASSWORD,
   type E2EUniversity,
 } from './fixtures.js';
@@ -203,16 +204,30 @@ test('5. print view renders 10 cards per A4 sheet with a scannable QR payload', 
   await expect(card.getByTestId('card-photo')).toHaveAttribute('src', /^data:image\/jpeg;base64,/);
 });
 
-test('6. a student opens a stop and the Google Maps link carries the stored URL', async ({ page }) => {
+test('6. student routes: outbound above return; a stop opens with the stored Google Maps link', async ({ page }) => {
   const st = await createE2EStudent(uni, { subscribe: true, photo: true, ready: true });
+  const { data: ret } = await service
+    .from('routes')
+    .insert({ university_id: uni.id, name: 'خط العودة للواجهة', direction: 'return', departure_time: '14:00' })
+    .select('id')
+    .single();
   await login(page, st.transportNumber, STAFF_PASSWORD);
   await expect(page).toHaveURL(/\/$/);
   await page.getByRole('link', { name: 'الخطوط' }).click();
-  await page.getByTestId('route-toggle').first().click();
+  // outbound routes are listed first, return routes below them
+  const outbound = page.getByTestId('routes-outbound');
+  const back = page.getByTestId('routes-return');
+  await expect(outbound).toContainText('خط الواجهة');
+  await expect(back).toContainText('خط العودة للواجهة');
+  await expect(outbound).not.toContainText('خط العودة للواجهة');
+  const [top, bottom] = await Promise.all([outbound.boundingBox(), back.boundingBox()]);
+  expect((top?.y ?? 0) < (bottom?.y ?? 0)).toBe(true);
+  await outbound.getByTestId('route-toggle').first().click();
   await page.getByTestId('stop-button').first().click();
   const link = page.getByTestId('maps-link');
   await expect(link).toHaveText(/الاتجاهات على خرائط غوغل/);
   await expect(link).toHaveAttribute('href', uni.stopUrl);
+  await service.from('routes').delete().eq('id', ret?.id as string);
 });
 
 const CREDIT = 'This System is made by Trinode';
@@ -389,4 +404,25 @@ test('12. the weekly schedule is edited only by the admin; the student has no wa
   await expect(card.getByRole('listitem')).toHaveCount(1);
   await expect(card).toContainText('الثلاثاء');
   await expect(card).toContainText('15:30');
+});
+
+test('13. the student sees the card on the new design and downloads it as an image', async ({ page }) => {
+  const st = await createE2EStudent(uni, { subscribe: true, photo: true, ready: true });
+  await login(page, st.transportNumber, STAFF_PASSWORD);
+  await expect(page).toHaveURL(/\/$/);
+  await page.getByTestId('my-card').click();
+  const card = page.getByRole('dialog').getByTestId('transport-card');
+  await expect(card).toContainText(st.transportNumber);
+  await expect(card).toContainText(st.name);
+  await expect(card.locator('svg[data-payload]')).toHaveAttribute('data-payload', `SMR:${st.qrToken}`);
+  await expect(card.getByTestId('card-photo')).toHaveAttribute('src', /^data:image\/jpeg;base64,/);
+  await expect(card.locator('img').first()).toHaveJSProperty('complete', true);
+  expect(await card.locator('img').first().evaluate((img: HTMLImageElement) => img.naturalWidth)).toBe(1034);
+
+  const [download] = await Promise.all([page.waitForEvent('download'), page.getByTestId('download-card').click()]);
+  expect(download.suggestedFilename()).toBe(`بطاقة-النقل-${st.transportNumber}.png`);
+  const path = await download.path();
+  const { default: sharp } = await import('sharp');
+  const meta = await sharp(path).metadata();
+  expect([meta.format, meta.width, meta.height]).toEqual(['png', 2068, 1304]);
 });

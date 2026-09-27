@@ -237,6 +237,8 @@ export const t = {
     departure: 'موعد الانطلاق',
     stops: 'نقاط الوقوف',
     noRoutes: 'لا توجد خطوط منشورة بعد',
+    routeGroups: { outbound: 'خطوط الذهاب', return: 'خطوط العودة' } as Record<string, string>,
+    noRoutesInGroup: 'لا توجد خطوط في هذا القسم',
     noStops: 'لا توجد نقاط وقوف لهذا الخط',
     accountTitle: 'حسابي',
     fullName: 'الاسم الثلاثي',
@@ -758,8 +760,12 @@ export const t = {
     count: (n: number) => `${n} بطاقة`,
     empty: 'لا توجد بطاقات للطباعة',
     printHint: 'استخدم «حفظ كملف PDF» من نافذة الطباعة للحصول على ملف PDF.',
-    transportCard: 'بطاقة النقل الجامعي',
-    noPackage: 'بدون باقة',
+    fileName: 'بطاقة-النقل',
+    myCard: 'بطاقتي',
+    myCardHint: 'هذه بطاقة النقل الخاصة بك، يمكنك تحميلها كصورة والاحتفاظ بها على جهازك.',
+    download: 'تحميل البطاقة',
+    downloading: 'جارٍ تجهيز الصورة…',
+    downloaded: 'تم تحميل البطاقة',
   },
 
   errors: {
