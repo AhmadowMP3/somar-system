@@ -28,6 +28,8 @@ const envSchema = z.object({
     .default('false')
     .transform((v) => v === 'true' || v === '1'),
   WEB_DIST_DIR: z.string().default(resolve(here, '../../web/dist')),
+  /** OSRM-compatible routing service for route map paths; empty = straight lines between stops. */
+  ROUTING_URL: z.string().default('https://router.project-osrm.org'),
 });
 
 export type Config = z.infer<typeof envSchema> & { version: string };

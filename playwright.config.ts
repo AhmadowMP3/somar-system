@@ -35,6 +35,7 @@ export default defineConfig({
         url: `${baseURL}/api/healthz`,
         reuseExistingServer: true,
         timeout: 60_000,
-        env: { DISABLE_CRON: 'true' },
+        // no external routing service during tests: route maps use straight lines between stops
+        env: { DISABLE_CRON: 'true', ROUTING_URL: '' },
       },
 });

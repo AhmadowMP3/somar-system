@@ -9,6 +9,7 @@ import { createAdminClient } from './lib/supabase.js';
 import { meRoutes } from './routes/me.js';
 import { probeRoutes } from './routes/probe.js';
 import { notificationRoutes } from './routes/notifications.js';
+import { mapRoutes } from './routes/maps.js';
 import { scanRoutes } from './routes/scan.js';
 import { staffRoutes } from './routes/staff.js';
 import { staticRoutes } from './routes/static.js';
@@ -74,6 +75,7 @@ export async function buildApp(cfg: Config, opts: { logger?: boolean } = {}): Pr
     await staffRoutes(scope, ctx);
     await scanRoutes(scope, ctx);
     await notificationRoutes(scope, { ...ctx, push });
+    await mapRoutes(scope, ctx);
   });
   await probeRoutes(app, cfg);
   await staticRoutes(app, cfg);

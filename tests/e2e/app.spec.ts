@@ -608,3 +608,55 @@ test('17. realtime: open screens update by themselves when data changes elsewher
   await expect(page.getByText(name)).toHaveCount(0, { timeout: 15_000 });
   await student.context().close();
 });
+
+test('18. route map: numbered stops and the path, from the list or the map view; admin opens it too', async ({ page }) => {
+  // the map tiles come from the internet; the test only checks our own layers
+  await page.route('**/tile.openstreetmap.org/**', (route) => route.fulfill({ status: 204 }));
+  const st = await createE2EStudent(uni, { subscribe: true, photo: true, ready: true });
+  await login(page, st.transportNumber, STAFF_PASSWORD);
+  await expect(page).toHaveURL(/\/$/);
+  await page.getByRole('link', { name: 'الخطوط' }).click();
+
+  // from a route card
+  await page.getByTestId('routes-outbound').getByTestId('route-toggle').filter({ hasText: 'خط الواجهة' }).first().click();
+  await page.getByTestId('route-show-map').first().click();
+  const map = page.getByTestId('route-map');
+  await expect(map).toBeVisible();
+  await expect(page.getByTestId('map-route-select').locator('option:checked')).toContainText('خط الواجهة');
+  // other tests may add stops to this route: compare with the stops that have a location
+  const { data: routeRow } = await service
+    .from('routes')
+    .select('route_stops(stop:stops(lat))')
+    .eq('university_id', uni.id)
+    .eq('name', 'خط الواجهة')
+    .single();
+  const located = ((routeRow?.route_stops ?? []) as unknown as { stop: { lat: number | null } | null }[]).filter((x) => x.stop?.lat != null).length;
+  expect(located).toBeGreaterThanOrEqual(2);
+  await expect(map.locator('.route-stop')).toHaveCount(located);
+  await expect(map.locator('.route-stop').first()).toHaveText('1');
+  await expect(map.locator('path.route-path')).toHaveCount(1);
+  await expect(map).toHaveAttribute('data-path-source', 'straight');
+
+  // a stop's popup has its name, time and directions
+  await map.locator('.route-stop').first().click();
+  await expect(map.locator('.leaflet-popup-content')).toContainText('1. ساحة جامعة');
+  await expect(map.locator('.leaflet-popup-content')).toContainText('07:05');
+  await expect(map.locator('.leaflet-popup-content a')).toHaveAttribute('href', uni.stopUrl);
+
+  // back to the list and forth with the view switch
+  await page.getByTestId('routes-view-list').click();
+  await expect(page.getByTestId('route-map')).toHaveCount(0);
+  await page.getByTestId('routes-view-map').click();
+  await expect(page.getByTestId('route-map')).toBeVisible();
+
+  // the admin sees the same map from the route card
+  await page.context().clearCookies();
+  await page.evaluate(() => localStorage.clear());
+  await login(page, ADMIN_CODE, ADMIN_PASSWORD);
+  await expect(page).toHaveURL(/\/admin$/);
+  await pickUniversity(page, uni.id);
+  await page.goto('/admin/routes');
+  await page.getByTestId('route-toggle').filter({ hasText: 'خط الواجهة' }).first().click();
+  await page.getByTestId('admin-route-map').first().click();
+  await expect(page.getByRole('dialog').getByTestId('route-map').locator('.route-stop')).toHaveCount(located);
+});

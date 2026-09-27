@@ -7,22 +7,25 @@ import {
   ChevronDown,
   ChevronLeft,
   KeyRound,
+  List as ListIcon,
   LogOut,
+  Map as MapIcon,
   MapPinned,
   Navigation,
   Package as PackageIcon,
   ScanLine,
 } from 'lucide-react';
-import { useEffect, useState } from 'react';
+import { useEffect, useId, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { formatClock, formatDate, formatDateTime, formatPhoneDisplay, formatTime } from '@somar/shared';
 import { useAuth } from '@/app/auth';
 import { DirectionBadge } from '@/components/common';
 import { QrCode } from '@/components/QrCode';
+import { RouteMap } from '@/components/RouteMap';
 import { CardFace, downloadCard, toDataUri, type CardValues } from '@/components/StudentCard';
 import { PickupHomeCard } from './PickupPage';
 import { Dialog, useToast } from '@/components/ui/overlay';
-import { Badge, Button, Card, CardTitle, Skeleton } from '@/components/ui/primitives';
+import { Badge, Button, Card, CardTitle, Field, Select, Skeleton } from '@/components/ui/primitives';
 import { EmptyState, PageHeader, QueryState } from '@/components/ui/states';
 import { t } from '@/i18n/ar';
 import { api } from '@/lib/api';
@@ -405,11 +408,44 @@ export function useStopLibrary(universityId: string | null | undefined) {
 /** Outbound routes first, then return routes; a route running both ways is listed in both. */
 const ROUTE_GROUPS = ['outbound', 'return'] as const;
 
+/** Map view: pick a route (grouped outbound / return), see its stops and the path on the map. */
+function RoutesMapView({ rows, selectedId, onSelect }: { rows: RouteRow[]; selectedId: string | null; onSelect: (id: string) => void }) {
+  const pickId = useId();
+  const withStops = rows.filter((r) => r.route_stops.length);
+  const byTime = (x: RouteRow, y: RouteRow) => (x.departure_time ?? '99').localeCompare(y.departure_time ?? '99') || x.name.localeCompare(y.name, 'ar');
+  const route = withStops.find((r) => r.id === selectedId) ?? withStops.sort(byTime)[0];
+  if (!route) return <EmptyState title={t.student.noRoutes} />;
+  return (
+    <div className="space-y-3">
+      <Field label={t.routeMap.pickRoute} htmlFor={pickId}>
+        <Select id={pickId} value={route.id} onChange={(e) => onSelect(e.target.value)} data-testid="map-route-select">
+          {ROUTE_GROUPS.map((group) => (
+            <optgroup key={group} label={t.student.routeGroups[group]}>
+              {withStops
+                .filter((r) => r.direction === group || r.direction === 'both')
+                .sort(byTime)
+                .map((r) => (
+                  <option key={`${group}:${r.id}`} value={r.id}>
+                    {r.name}
+                    {r.departure_time ? ` — ${formatClock(r.departure_time)}` : ''}
+                  </option>
+                ))}
+            </optgroup>
+          ))}
+        </Select>
+      </Field>
+      <RouteMap key={route.id} route={route} />
+    </div>
+  );
+}
+
 export function RoutesPage() {
   const { me } = useAuth();
   const query = useRoutes(me?.student?.university_id, true);
   const [stop, setStop] = useState<{ route: RouteRow; stop: StopRow } | null>(null);
   const [openIds, setOpenIds] = useState<Set<string>>(new Set());
+  const [view, setView] = useState<'list' | 'map'>('list');
+  const [mapRouteId, setMapRouteId] = useState<string | null>(null);
   const toggle = (id: string) =>
     setOpenIds((prev) => {
       const next = new Set(prev);
@@ -419,9 +455,32 @@ export function RoutesPage() {
     });
   return (
     <div>
-      <PageHeader title={t.student.routesTitle} />
+      <PageHeader
+        title={t.student.routesTitle}
+        actions={
+          <div role="tablist" aria-label={t.routeMap.viewMode} className="flex rounded-lg border border-border p-1">
+            {(['list', 'map'] as const).map((v) => (
+              <button
+                key={v}
+                type="button"
+                role="tab"
+                aria-selected={view === v}
+                onClick={() => setView(v)}
+                className={cn('flex min-h-[36px] items-center gap-1 rounded-md px-3 text-sm font-semibold', view === v ? 'bg-brand-ink text-white' : '')}
+                data-testid={`routes-view-${v}`}
+              >
+                {v === 'list' ? <ListIcon className="h-4 w-4" aria-hidden /> : <MapIcon className="h-4 w-4" aria-hidden />}
+                {t.routeMap[v]}
+              </button>
+            ))}
+          </div>
+        }
+      />
       <QueryState query={query} empty={(rows) => (rows.length ? null : <EmptyState title={t.student.noRoutes} />)}>
-        {(rows) => (
+        {(rows) =>
+          view === 'map' ? (
+            <RoutesMapView rows={rows} selectedId={mapRouteId} onSelect={setMapRouteId} />
+          ) : (
           <div className="space-y-6">
             {ROUTE_GROUPS.map((group) => {
               const list = rows
@@ -465,6 +524,21 @@ export function RoutesPage() {
                                 />
                               </button>
                               {!openIds.has(key) ? null : r.notes ? <p className="my-2 text-sm text-muted">{r.notes}</p> : null}
+                              {openIds.has(key) && r.route_stops.length ? (
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  className="my-2"
+                                  onClick={() => {
+                                    setMapRouteId(r.id);
+                                    setView('map');
+                                  }}
+                                  data-testid="route-show-map"
+                                >
+                                  <MapIcon className="h-4 w-4" aria-hidden />
+                                  {t.routeMap.showOnMap}
+                                </Button>
+                              ) : null}
                               {!openIds.has(key) ? null : r.route_stops.length ? (
                                 <ol className="space-y-1">
                                   {r.route_stops.map((s) => (
@@ -499,7 +573,8 @@ export function RoutesPage() {
               );
             })}
           </div>
-        )}
+          )
+        }
       </QueryState>
       <Dialog open={Boolean(stop)} onOpenChange={(o) => !o && setStop(null)} title={stop?.stop.name ?? ''} description={stop?.route.name}>
         {stop ? (

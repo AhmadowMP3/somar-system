@@ -1,9 +1,10 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { ArrowDown, ArrowUp, ChevronDown, Copy, CopyPlus, ExternalLink, Pencil, Plus, Trash2 } from 'lucide-react';
+import { ArrowDown, ArrowUp, ChevronDown, Copy, CopyPlus, ExternalLink, Map as MapIcon, Pencil, Plus, Trash2 } from 'lucide-react';
 import { useId, useState, type FormEvent } from 'react';
 import { formatClock } from '@somar/shared';
 import { Link } from 'react-router-dom';
 import { useRoutes, useStopLibrary, type RouteRow, type StopRow } from '@/features/student/StudentPages';
+import { RouteMap } from '@/components/RouteMap';
 import { SearchPicker } from '@/components/SearchPicker';
 import { ConfirmDialog, Dialog, useToast } from '@/components/ui/overlay';
 import { Badge, Button, Card, Field, Input, Select, Switch, Textarea } from '@/components/ui/primitives';
@@ -44,6 +45,7 @@ function RoutesBody({ universityId }: { universityId: string }) {
   });
   const [copyingStop, setCopyingStop] = useState<{ route: RouteRow; stop: StopRow } | null>(null);
   const [openIds, setOpenIds] = useState<Set<string>>(new Set());
+  const [mapRoute, setMapRoute] = useState<RouteRow | null>(null);
   const toggle = (id: string) =>
     setOpenIds((prev) => {
       const next = new Set(prev);
@@ -113,6 +115,12 @@ function RoutesBody({ universityId }: { universityId: string }) {
                           <Copy className="h-4 w-4" aria-hidden />
                           {r.duplicate}
                         </Button>
+                        {route.route_stops.length ? (
+                          <Button size="sm" onClick={() => setMapRoute(route)} data-testid="admin-route-map">
+                            <MapIcon className="h-4 w-4" aria-hidden />
+                            {t.routeMap.map}
+                          </Button>
+                        ) : null}
                         <Button size="sm" variant="secondary" onClick={() => setEditingStop({ route, stop: null })}>
                           <Plus className="h-4 w-4" aria-hidden />
                           {r.addStop}
@@ -177,6 +185,15 @@ function RoutesBody({ universityId }: { universityId: string }) {
       {editingStop ? (
         <StopDialog universityId={universityId} route={editingStop.route} stop={editingStop.stop} onClose={() => setEditingStop(null)} onSaved={invalidate} />
       ) : null}
+      <Dialog
+        open={mapRoute !== null}
+        onOpenChange={(o) => (o ? undefined : setMapRoute(null))}
+        title={t.routeMap.title}
+        description={mapRoute?.name}
+        className="sm:max-w-3xl"
+      >
+        {mapRoute ? <RouteMap route={mapRoute} /> : null}
+      </Dialog>
       {copyingStop ? (
         <CopyStopDialog
           source={copyingStop.route}

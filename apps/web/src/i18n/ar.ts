@@ -296,6 +296,23 @@ export const t = {
     at: (stop: string, time: string) => `${stop} — الساعة ${time}`,
   },
 
+  routeMap: {
+    title: 'خريطة الخط',
+    list: 'قائمة',
+    map: 'خريطة',
+    viewMode: 'طريقة العرض',
+    pickRoute: 'الخط المعروض',
+    showOnMap: 'عرض على الخريطة',
+    start: 'أول نقطة',
+    end: 'آخر نقطة',
+    road: 'الخط يتبع الطريق الفعلي بين النقاط',
+    straight: 'خطوط مستقيمة بين النقاط (تعذّر حساب مسار الطريق)',
+    loading: 'جارٍ حساب مسار الطريق…',
+    directions: 'الاتجاهات على خرائط غوغل',
+    noLocations: 'لا يوجد موقع مسجّل لأي نقطة في هذا الخط.',
+    missing: (names: string) => `نقاط بلا موقع لا تظهر على الخريطة: ${names}`,
+  },
+
   install: {
     button: 'تنزيل التطبيق',
     iosTitle: 'تنزيل التطبيق على iPhone',
