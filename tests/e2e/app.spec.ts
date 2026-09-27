@@ -1,4 +1,4 @@
-import { expect, test, type Page } from '@playwright/test';
+import { devices, expect, test, type Browser, type Page } from '@playwright/test';
 import { IMPORT_EXPECTED, IMPORT_FILE } from '../../supabase/seed/generate-import.js';
 import {
   ADMIN_CODE,
@@ -518,4 +518,93 @@ test('15. tomorrow pickup: window from the settings, one locked choice of stop +
     await service.from('pickup_choices').delete().eq('student_id', st.id);
     await service.from('routes').delete().eq('id', ret?.id as string);
   }
+});
+
+/** A second signed-in user in its own browser context (same simulated push device as the main one). */
+async function secondUser(browser: Browser): Promise<Page> {
+  const context = await browser.newContext({ ...devices['Pixel 7'], locale: 'ar-SY', timezoneId: 'Asia/Damascus', serviceWorkers: 'block' });
+  await context.addInitScript(fakePush);
+  await context.route('**/api/push/subscribe', (route) => route.fulfill({ json: { ok: true, enabled: true } }));
+  return context.newPage();
+}
+
+test('16. supervisor permissions: chosen in a popup when created, edited later, applied live to the open session', async ({ page, browser }) => {
+  const code = `${uni.prefix}-P${Math.floor(Math.random() * 90 + 10)}`;
+  await login(page, ADMIN_CODE, ADMIN_PASSWORD);
+  await expect(page).toHaveURL(/\/admin$/);
+  await pickUniversity(page, uni.id);
+  await page.goto('/admin/supervisors');
+  await page.getByRole('button', { name: 'إضافة مشرف' }).click();
+  const dialog = page.getByRole('dialog');
+  await dialog.getByLabel('رمز الدخول').fill(code);
+  await dialog.getByLabel('الاسم').fill('مشرف الخطوط');
+  await dialog.getByLabel('كلمة المرور الأولية').fill(STAFF_PASSWORD);
+  await dialog.getByTestId('perm-scan-only').click();
+  await dialog.getByText('الخطوط ونقاط الوقوف', { exact: true }).click();
+  await dialog.getByTestId('supervisor-save').click();
+  await expect(dialog).toHaveCount(0);
+  const { data: created } = await service.from('profiles').select('id, role, permissions').eq('login_code', code).single();
+  expect(created).toMatchObject({ role: 'university_supervisor', permissions: ['routes', 'scan'] });
+  await service.from('profiles').update({ must_change_password: false }).eq('id', created?.id as string);
+
+  // the supervisor sees only the allowed pages; other pages send them back
+  const sup = await secondUser(browser);
+  await login(sup, code, STAFF_PASSWORD);
+  await expect(sup).toHaveURL(/\/admin\/stops$/);
+  await sup.getByRole('button', { name: 'القائمة' }).click();
+  const drawer = sup.getByRole('dialog', { name: 'القائمة' });
+  // exactly the chosen pages: stops + routes (the «routes» permission) and scanning
+  await expect(drawer.getByRole('link')).toHaveText(['نقاط الوقوف', 'الخطوط ونقاط الوقوف', 'مسح QR']);
+  await drawer.getByRole('button', { name: 'إغلاق' }).last().click();
+  await sup.goto('/admin/students');
+  await expect(sup).toHaveURL(/\/admin\/stops$/);
+
+  // the admin adds «الطلاب» in the popup; the open session picks it up without a reload
+  await page.locator('li').filter({ hasText: code }).getByTestId('edit-permissions').click();
+  await page.getByRole('dialog').getByText('الطلاب وطباعة البطاقات', { exact: true }).click();
+  await page.getByRole('dialog').getByTestId('permissions-save').click();
+  await expect(page.getByText('تم حفظ الصلاحيات')).toBeVisible();
+  await sup.getByRole('button', { name: 'القائمة' }).click();
+  await expect(sup.getByRole('dialog', { name: 'القائمة' }).getByRole('link', { name: 'الطلاب' })).toHaveCount(1, { timeout: 15_000 });
+  await sup.context().close();
+});
+
+test('17. realtime: open screens update by themselves when data changes elsewhere', async ({ page, browser }) => {
+  const st = await createE2EStudent(uni, { subscribe: true, photo: true, ready: true });
+  await login(page, ADMIN_CODE, ADMIN_PASSWORD);
+  await expect(page).toHaveURL(/\/admin$/);
+  await pickUniversity(page, uni.id);
+  await page.goto('/admin/routes');
+  await expect(page.locator('html[data-realtime="on"]')).toHaveCount(1, { timeout: 20_000 });
+
+  const student = await secondUser(browser);
+  await login(student, st.transportNumber, STAFF_PASSWORD);
+  await expect(student).toHaveURL(/\/$/);
+  await expect(student.locator('html[data-realtime="on"]')).toHaveCount(1, { timeout: 20_000 });
+  await student.getByRole('link', { name: 'الخطوط' }).click();
+
+  // a route added elsewhere appears on both open screens, with no reload
+  const name = `خط مباشر ${Math.floor(Math.random() * 9000 + 1000)}`;
+  const { data: route } = await service
+    .from('routes')
+    .insert({ university_id: uni.id, name, direction: 'outbound', departure_time: '06:45' })
+    .select('id')
+    .single();
+  await expect(page.getByText(name)).toBeVisible({ timeout: 15_000 });
+  await expect(student.getByText(name)).toBeVisible({ timeout: 15_000 });
+
+  // a notification for this student shows up live in their list
+  await student.goto('/notifications');
+  await service.from('notifications').insert({
+    university_id: uni.id,
+    student_id: st.id,
+    type: 'BROADCAST',
+    title: 'إشعار مباشر',
+    body: 'وصل بدون تحديث الصفحة',
+  });
+  await expect(student.getByText('إشعار مباشر')).toBeVisible({ timeout: 15_000 });
+
+  await service.from('routes').delete().eq('id', route?.id as string);
+  await expect(page.getByText(name)).toHaveCount(0, { timeout: 15_000 });
+  await student.context().close();
 });

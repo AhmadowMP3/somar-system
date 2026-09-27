@@ -1,6 +1,6 @@
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
-import { staffInputSchema } from '@somar/shared';
+import { roleForPermissions, staffInputSchema } from '@somar/shared';
 import { writeAudit } from '../lib/audit.js';
 import { assertUniversityScope, authOf, clientIp, type AppContext } from '../lib/auth.js';
 import { ApiError, notFound } from '../lib/errors.js';
@@ -16,14 +16,20 @@ export async function staffRoutes(app: FastifyInstance, ctx: AppContext) {
   app.post('/api/supervisors', { preHandler: adminOnly }, async (request, reply) => {
     const auth = authOf(request);
     const input = staffInputSchema.parse(request.body);
-    const { profileId } = await provisionStaff(db, cfg, { ...input, must_change_password: true });
+    const permissions = input.permissions ? [...new Set(input.permissions)].sort() : null;
+    const role = permissions ? roleForPermissions(permissions) : input.role;
+    const { profileId } = await provisionStaff(db, cfg, { ...input, role, must_change_password: true });
+    if (permissions) {
+      const { error } = await db.from('profiles').update({ permissions }).eq('id', profileId);
+      if (error) throw new ApiError(500, 'INTERNAL');
+    }
     await writeAudit(db, {
       actor: auth.profile.id,
       universityId: input.university_id,
       action: 'supervisor.create',
       entity: 'profiles',
       entityId: profileId,
-      after: { login_code: input.login_code, role: input.role, full_name: input.full_name },
+      after: { login_code: input.login_code, role, permissions, full_name: input.full_name },
       ip: clientIp(request),
     });
     reply.code(201);

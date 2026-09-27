@@ -2,7 +2,7 @@ import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { arShared, broadcastSchema } from '@somar/shared';
 import { writeAudit } from '../lib/audit.js';
-import { assertUniversityScope, authOf, clientIp, type AppContext } from '../lib/auth.js';
+import { assertPermission, assertUniversityScope, authOf, clientIp, type AppContext } from '../lib/auth.js';
 import { ApiError, badRequest } from '../lib/errors.js';
 import type { PushService } from '../services/push.js';
 
@@ -48,6 +48,7 @@ export async function notificationRoutes(app: FastifyInstance, ctx: AppContext &
 
   app.post('/api/notifications/broadcast', { preHandler: staff }, async (request, reply) => {
     const auth = authOf(request);
+    assertPermission(auth, 'notifications');
     const input = broadcastSchema.parse(request.body);
     assertUniversityScope(auth, input.university_id);
 

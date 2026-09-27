@@ -1,6 +1,6 @@
 import { lazy, Suspense, type ReactNode } from 'react';
 import { createBrowserRouter, Link, Navigate, Outlet, useLocation } from 'react-router-dom';
-import type { Role } from '@somar/shared';
+import type { Permission, Role } from '@somar/shared';
 import { PushGate } from '@/components/PushGate';
 import { Button } from '@/components/ui/primitives';
 import { ErrorState, ListSkeleton } from '@/components/ui/states';
@@ -9,7 +9,7 @@ import { SetupPage } from '@/features/student/SetupPage';
 import { PickupPage } from '@/features/student/PickupPage';
 import { t } from '@/i18n/ar';
 import { useAuth } from './auth';
-import { AdminLayout, ScanLayout, StudentLayout } from './layouts';
+import { AdminLayout, ScanLayout, StudentLayout, useAdminNav } from './layouts';
 
 const StudentHome = lazy(() => import('@/features/student/StudentPages').then((m) => ({ default: m.StudentHome })));
 const TripsPage = lazy(() => import('@/features/student/StudentPages').then((m) => ({ default: m.TripsPage })));
@@ -100,12 +100,22 @@ function RequireAuth() {
   );
 }
 
-function RequireRole({ roles, student }: { roles: Role[]; student?: boolean }) {
-  const { me } = useAuth();
+function RequireRole({ roles, student, perm }: { roles: Role[]; student?: boolean; perm?: Permission }) {
+  const { me, can } = useAuth();
   const role = me?.profile?.role;
-  const allowed = (role && roles.includes(role)) || (student && me?.student);
+  const allowed = ((role && roles.includes(role)) || (student && me?.student)) && (!perm || can(perm));
   if (!allowed) return <Navigate to="/" replace />;
   return <Outlet />;
+}
+
+/** A staff page the user has no permission for sends them to the first page they may open. */
+function Allowed({ perm, adminOnly, children }: { perm?: Permission; adminOnly?: boolean; children: ReactNode }) {
+  const { me, can } = useAuth();
+  const nav = useAdminNav();
+  const ok = adminOnly ? me?.profile?.role === 'admin' : !perm || can(perm);
+  if (ok) return <Page>{children}</Page>;
+  const first = nav.find((item) => item.to !== '/admin');
+  return first ? <Navigate to={first.to} replace /> : <NotFound />;
 }
 
 function HomeRedirect() {
@@ -160,37 +170,37 @@ export const router = createBrowserRouter([
         children: [{ path: '/', element: <HomeRedirect /> }],
       },
       {
-        element: <RequireRole roles={SCANNERS} />,
+        element: <RequireRole roles={SCANNERS} perm="scan" />,
         children: [{ element: <ScanLayout />, children: [{ path: '/scan', element: <Page><ScanPage /></Page> }] }],
       },
       {
         element: <RequireRole roles={STAFF} />,
         children: [
-          { path: '/admin/cards', element: <Page><CardsPrintPage /></Page> },
+          { path: '/admin/cards', element: <Allowed perm="students"><CardsPrintPage /></Allowed> },
           {
             path: '/admin',
             element: <AdminLayout />,
             children: [
-              { index: true, element: <Page><Admin.Dashboard /></Page> },
-              { path: 'universities', element: <Page><Admin.Universities /></Page> },
-              { path: 'colleges', element: <Page><Admin.Colleges /></Page> },
-              { path: 'areas', element: <Page><Admin.Areas /></Page> },
-              { path: 'areas/mapping', element: <Page><Admin.AreaMapping /></Page> },
-              { path: 'packages', element: <Page><Admin.Packages /></Page> },
-              { path: 'routes', element: <Page><Admin.Routes /></Page> },
-              { path: 'stops', element: <Page><Admin.Stops /></Page> },
-              { path: 'stats', element: <Page><Admin.Stats /></Page> },
-              { path: 'pickups', element: <Page><Admin.Pickups /></Page> },
-              { path: 'students', element: <Page><Admin.Students /></Page> },
-              { path: 'students/new', element: <Page><Admin.StudentForm /></Page> },
-              { path: 'students/:id', element: <Page><Admin.StudentDetail /></Page> },
-              { path: 'students/:id/edit', element: <Page><Admin.StudentForm /></Page> },
-              { path: 'import', element: <Page><Admin.Import /></Page> },
-              { path: 'supervisors', element: <Page><Admin.Supervisors /></Page> },
-              { path: 'scans', element: <Page><Admin.Scans /></Page> },
-              { path: 'notifications', element: <Page><Admin.Notifications /></Page> },
-              { path: 'settings', element: <Page><Admin.Settings /></Page> },
-              { path: 'audit', element: <Page><Admin.Audit /></Page> },
+              { index: true, element: <Allowed perm="dashboard"><Admin.Dashboard /></Allowed> },
+              { path: 'universities', element: <Allowed adminOnly><Admin.Universities /></Allowed> },
+              { path: 'colleges', element: <Allowed perm="org"><Admin.Colleges /></Allowed> },
+              { path: 'areas', element: <Allowed perm="org"><Admin.Areas /></Allowed> },
+              { path: 'areas/mapping', element: <Allowed perm="org"><Admin.AreaMapping /></Allowed> },
+              { path: 'packages', element: <Allowed perm="packages"><Admin.Packages /></Allowed> },
+              { path: 'routes', element: <Allowed perm="routes"><Admin.Routes /></Allowed> },
+              { path: 'stops', element: <Allowed perm="routes"><Admin.Stops /></Allowed> },
+              { path: 'stats', element: <Allowed perm="stats"><Admin.Stats /></Allowed> },
+              { path: 'pickups', element: <Allowed perm="pickups"><Admin.Pickups /></Allowed> },
+              { path: 'students', element: <Allowed perm="students"><Admin.Students /></Allowed> },
+              { path: 'students/new', element: <Allowed perm="students"><Admin.StudentForm /></Allowed> },
+              { path: 'students/:id', element: <Allowed perm="students"><Admin.StudentDetail /></Allowed> },
+              { path: 'students/:id/edit', element: <Allowed perm="students"><Admin.StudentForm /></Allowed> },
+              { path: 'import', element: <Allowed perm="import"><Admin.Import /></Allowed> },
+              { path: 'supervisors', element: <Allowed perm="supervisors"><Admin.Supervisors /></Allowed> },
+              { path: 'scans', element: <Allowed perm="scans"><Admin.Scans /></Allowed> },
+              { path: 'notifications', element: <Allowed perm="notifications"><Admin.Notifications /></Allowed> },
+              { path: 'settings', element: <Allowed perm="settings"><Admin.Settings /></Allowed> },
+              { path: 'audit', element: <Allowed perm="audit"><Admin.Audit /></Allowed> },
             ],
           },
         ],

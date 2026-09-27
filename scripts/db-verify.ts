@@ -17,7 +17,7 @@ const FUNCTIONS = [
   'assign_subscription', 'bulk_adjust_package', 'allocate_transport_number', 'provision_student', 'admin_dashboard',
   'save_my_setup', 'save_student_schedule', 'schedule_stats', 'duplicate_route',
   'run_recurring_notifications', 'pickup_window', 'choose_my_pickup', 'pickup_stats', 'pickup_days',
-  'pickup_return_times', 'pickup_return_stats',
+  'pickup_return_times', 'pickup_return_stats', 'has_permission', 'staff_can', 'set_staff_permissions',
 ];
 const INDEXES = ['scans_one_direction_per_day_idx', 'subscriptions_one_active_idx'];
 
@@ -68,6 +68,14 @@ export async function verifySchema(client: pg.Client, env: ProdEnv, r: Report, p
   const subIdx = idx.rows.find((i) => i.indexname === INDEXES[1]);
   r.add('idx-scans', 'فهرس «ذهاب/عودة واحد لكل يوم»', scanIdx && /student_id, service_date, direction/.test(scanIdx.indexdef) && /cancelled_at IS NULL/i.test(scanIdx.indexdef) ? 'PASS' : 'FAIL', scanIdx ? 'UNIQUE … WHERE cancelled_at IS NULL' : 'غير موجود');
   r.add('idx-subs', 'فهرس «اشتراك فعّال واحد»', subIdx && /status = 'active'/.test(subIdx.indexdef) ? 'PASS' : 'FAIL', subIdx ? 'UNIQUE … WHERE status = active' : 'غير موجود');
+
+  const pub = await client.query<{ tablename: string }>(
+    `select tablename from pg_publication_tables where pubname = 'supabase_realtime' and schemaname = 'public'`,
+  );
+  // counters and push device keys are never shown on screen, so they are deliberately not published
+  const unpublished = APP_TABLES.filter((t) => !['university_counters', 'push_subscriptions'].includes(t) && !pub.rows.some((x) => x.tablename === t));
+  r.add('realtime', 'التحديث المباشر (realtime) لكل الجداول', unpublished.length ? 'FAIL' : 'PASS',
+    unpublished.length ? `غير منشور: ${unpublished.join(', ')}` : `${pub.rowCount} جدول منشور`, 'npm run db:apply -- --env .env.production');
 
   const clock = await client.query<{ n: number }>(`select count(*)::int as n from private.test_clock`).catch(() => null);
   r.add('clock', 'ساعة الاختبار فارغة', clock?.rows[0]?.n === 0 ? 'PASS' : 'FAIL', clock ? `${clock.rows[0]?.n} صف` : 'الجدول غير موجود', 'delete from private.test_clock; — وجود صف يجمّد وقت النظام');

@@ -4,4 +4,5 @@ export * from './dates.js';
 export * from './misc.js';
 export * from './importing.js';
 export * from './types.js';
+export * from './permissions.js';
 export { arShared } from './i18n/ar.js';

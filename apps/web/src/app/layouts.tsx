@@ -30,6 +30,7 @@ import { CreditFooter, InstallButton, Logo, NotificationBell, OfflineBanner, Uni
 import { Button } from '@/components/ui/primitives';
 import { t } from '@/i18n/ar';
 import { cn } from '@/lib/utils';
+import type { Permission } from '@somar/shared';
 import { useAuth } from './auth';
 
 type NavItem = { to: string; label: string; icon: LucideIcon; end?: boolean };
@@ -142,28 +143,36 @@ export function ScanLayout() {
   );
 }
 
-const ADMIN_NAV: NavItem[] = [
-  { to: '/admin', label: t.nav.dashboard, icon: LayoutDashboard, end: true },
-  { to: '/admin/universities', label: t.nav.universities, icon: Building2 },
-  { to: '/admin/colleges', label: t.nav.colleges, icon: GraduationCap },
-  { to: '/admin/areas', label: t.nav.areas, icon: MapPin },
-  { to: '/admin/packages', label: t.nav.adminPackages, icon: Package },
-  { to: '/admin/stops', label: t.nav.stops, icon: MapPinned },
-  { to: '/admin/routes', label: t.nav.adminRoutes, icon: Route },
-  { to: '/admin/students', label: t.nav.students, icon: Users },
-  { to: '/admin/import', label: t.nav.import, icon: FileSpreadsheet },
-  { to: '/admin/supervisors', label: t.nav.supervisors, icon: BookUser },
-  { to: '/admin/stats', label: t.nav.stats, icon: BarChart3 },
-  { to: '/admin/pickups', label: t.nav.pickups, icon: LocateFixed },
-  { to: '/admin/scans', label: t.nav.scans, icon: QrCode },
-  { to: '/admin/notifications', label: t.nav.adminNotifications, icon: Bell },
-  { to: '/admin/settings', label: t.nav.settings, icon: Settings },
-  { to: '/admin/audit', label: t.nav.audit, icon: ClipboardList },
-  { to: '/scan', label: t.nav.scan, icon: ScanLine },
+/** Staff menu; each page needs its permission (`adminOnly` pages are for the admin alone). */
+export const ADMIN_NAV: (NavItem & { perm?: Permission; adminOnly?: boolean })[] = [
+  { to: '/admin', label: t.nav.dashboard, icon: LayoutDashboard, end: true, perm: 'dashboard' },
+  { to: '/admin/universities', label: t.nav.universities, icon: Building2, adminOnly: true },
+  { to: '/admin/colleges', label: t.nav.colleges, icon: GraduationCap, perm: 'org' },
+  { to: '/admin/areas', label: t.nav.areas, icon: MapPin, perm: 'org' },
+  { to: '/admin/packages', label: t.nav.adminPackages, icon: Package, perm: 'packages' },
+  { to: '/admin/stops', label: t.nav.stops, icon: MapPinned, perm: 'routes' },
+  { to: '/admin/routes', label: t.nav.adminRoutes, icon: Route, perm: 'routes' },
+  { to: '/admin/students', label: t.nav.students, icon: Users, perm: 'students' },
+  { to: '/admin/import', label: t.nav.import, icon: FileSpreadsheet, perm: 'import' },
+  { to: '/admin/supervisors', label: t.nav.supervisors, icon: BookUser, perm: 'supervisors' },
+  { to: '/admin/stats', label: t.nav.stats, icon: BarChart3, perm: 'stats' },
+  { to: '/admin/pickups', label: t.nav.pickups, icon: LocateFixed, perm: 'pickups' },
+  { to: '/admin/scans', label: t.nav.scans, icon: QrCode, perm: 'scans' },
+  { to: '/admin/notifications', label: t.nav.adminNotifications, icon: Bell, perm: 'notifications' },
+  { to: '/admin/settings', label: t.nav.settings, icon: Settings, perm: 'settings' },
+  { to: '/admin/audit', label: t.nav.audit, icon: ClipboardList, perm: 'audit' },
+  { to: '/scan', label: t.nav.scan, icon: ScanLine, perm: 'scan' },
 ];
 
+/** The staff pages this user may open, in menu order. */
+export function useAdminNav() {
+  const { can, me } = useAuth();
+  const isAdmin = me?.profile?.role === 'admin';
+  return ADMIN_NAV.filter((item) => (item.adminOnly ? isAdmin : !item.perm || can(item.perm)));
+}
+
 function SideNav({ onNavigate }: { onNavigate?: () => void }) {
-  const items = ADMIN_NAV;
+  const items = useAdminNav();
   return (
     <nav aria-label={t.nav.menu}>
       <ul className="space-y-1">

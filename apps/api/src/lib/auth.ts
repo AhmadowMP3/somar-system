@@ -1,5 +1,5 @@
 import type { FastifyReply, FastifyRequest } from 'fastify';
-import type { Role } from '@somar/shared';
+import { hasPermission, type Permission, type Role } from '@somar/shared';
 import type { Config } from '../config.js';
 import { ApiError, forbidden, unauthorized } from './errors.js';
 import type { Db } from './supabase.js';
@@ -13,6 +13,7 @@ export type Profile = {
   phone: string | null;
   is_active: boolean;
   must_change_password: boolean;
+  permissions: string[] | null;
 };
 
 export type AuthContext = { token: string; profile: Profile };
@@ -39,7 +40,7 @@ export function makeAuthGuard(db: Db) {
       if (error || !userData.user) throw unauthorized();
       const { data: profile, error: pErr } = await db
         .from('profiles')
-        .select('id, login_code, role, university_id, full_name, phone, is_active, must_change_password')
+        .select('id, login_code, role, university_id, full_name, phone, is_active, must_change_password, permissions')
         .eq('id', userData.user.id)
         .maybeSingle<Profile>();
       if (pErr) throw new ApiError(500, 'INTERNAL');
@@ -55,6 +56,11 @@ export type RequireRole = ReturnType<typeof makeAuthGuard>;
 export function authOf(request: FastifyRequest): AuthContext {
   if (!request.auth) throw unauthorized();
   return request.auth;
+}
+
+/** The same page permission the database enforces (see has_permission in migration 0013). */
+export function assertPermission(auth: AuthContext, key: Permission): void {
+  if (!hasPermission(auth.profile.role, auth.profile.permissions, key)) throw forbidden();
 }
 
 /** Admin: any university. University supervisor: only their own. */

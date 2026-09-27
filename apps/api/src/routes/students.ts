@@ -10,7 +10,7 @@ import {
   type HeaderMapping,
 } from '@somar/shared';
 import { writeAudit } from '../lib/audit.js';
-import { assertUniversityScope, authOf, clientIp, type AppContext } from '../lib/auth.js';
+import { assertPermission, assertUniversityScope, authOf, clientIp, type AppContext } from '../lib/auth.js';
 import { ApiError, badRequest, conflict, notFound } from '../lib/errors.js';
 import { readMultipart } from '../lib/multipart.js';
 import { runImport } from '../services/import.js';
@@ -44,6 +44,7 @@ export async function studentRoutes(app: FastifyInstance, ctx: AppContext) {
 
   app.post('/api/students/import', { preHandler: staff }, async (request) => {
     const auth = authOf(request);
+    assertPermission(auth, 'import');
     const { fields, file } = await readMultipart(request);
     const universityId = fields.university_id ?? '';
     if (!z.string().uuid().safeParse(universityId).success) throw badRequest('UNIVERSITY_REQUIRED');
@@ -71,6 +72,7 @@ export async function studentRoutes(app: FastifyInstance, ctx: AppContext) {
 
   app.post('/api/students', { preHandler: staff }, async (request, reply) => {
     const auth = authOf(request);
+    assertPermission(auth, 'students');
     const input = studentInputSchema.parse(request.body);
     assertUniversityScope(auth, input.university_id);
     const name = checkFullName(input.full_name);

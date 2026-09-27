@@ -1,10 +1,11 @@
 import type { Session } from '@supabase/supabase-js';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
-import { loginCodeToEmail, type Role } from '@somar/shared';
+import { hasPermission, loginCodeToEmail, type Permission, type Role } from '@somar/shared';
 import { config } from '@/lib/config';
 import { supabase, unwrap } from '@/lib/supabase';
 import { safeStorage } from '@/lib/pwa';
+import { startRealtimeSync } from '@/lib/realtime';
 
 export type Profile = {
   id: string;
@@ -15,6 +16,7 @@ export type Profile = {
   phone: string | null;
   is_active: boolean;
   must_change_password: boolean;
+  permissions: string[] | null;
 };
 
 export type Me = {
@@ -40,6 +42,8 @@ type AuthState = {
   isStaff: boolean;
   canScan: boolean;
   isStudent: boolean;
+  /** Page permission (admin: always; supervisors: what the admin granted). */
+  can: (key: Permission) => boolean;
 };
 
 const AuthContext = createContext<AuthState | null>(null);
@@ -67,6 +71,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const uid = session?.user.id;
+
+  // live updates for everything this user can see, for as long as they are signed in
+  useEffect(() => {
+    if (!uid) return;
+    return startRealtimeSync(qc);
+  }, [uid, qc]);
+
   const meQuery = useQuery({
     queryKey: ['me', uid],
     enabled: Boolean(uid),
@@ -74,7 +85,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const profile = unwrap(
         await supabase
           .from('profiles')
-          .select('id, login_code, role, university_id, full_name, phone, is_active, must_change_password')
+          .select('id, login_code, role, university_id, full_name, phone, is_active, must_change_password, permissions')
           .eq('id', uid as string)
           .maybeSingle<Profile>(),
       );
@@ -104,6 +115,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const value = useMemo<AuthState>(() => {
     const role = meQuery.data?.profile?.role;
+    const permissions = meQuery.data?.profile?.permissions ?? null;
+    const can = (key: Permission) => hasPermission(role, permissions, key);
     return {
       session,
       ready,
@@ -114,8 +127,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       signOut,
       refreshMe: () => meQuery.refetch(),
       isStaff: role === 'admin' || role === 'university_supervisor',
-      canScan: role === 'admin' || role === 'university_supervisor' || role === 'supervisor',
+      canScan: can('scan'),
       isStudent: Boolean(meQuery.data?.student),
+      can,
     };
   }, [session, ready, meQuery, signIn, signOut]);
 

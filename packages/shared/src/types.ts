@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { PERMISSION_KEYS } from './permissions.js';
 
 export type ScanDirection = 'outbound' | 'return';
 export type ScanMethod = 'qr' | 'manual';
@@ -72,6 +73,8 @@ export const staffInputSchema = z.object({
   university_id: z.string().uuid(),
   password: z.string().min(6).max(128),
   role: z.enum(['supervisor', 'university_supervisor']).default('supervisor'),
+  /** When given, the role is derived from it (see roleForPermissions). */
+  permissions: z.array(z.enum(PERMISSION_KEYS)).min(1).max(PERMISSION_KEYS.length).optional(),
 });
 export type StaffInput = z.infer<typeof staffInputSchema>;
 

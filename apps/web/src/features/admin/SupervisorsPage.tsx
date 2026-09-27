@@ -1,14 +1,16 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { KeyRound, Plus, ShieldOff } from 'lucide-react';
+import { KeyRound, Plus, ShieldCheck, ShieldOff } from 'lucide-react';
 import { useId, useState, type FormEvent } from 'react';
+import type { Permission } from '@somar/shared';
 import { ConfirmDialog, Dialog, useToast } from '@/components/ui/overlay';
-import { Badge, Button, Field, Input, Select, Switch } from '@/components/ui/primitives';
+import { Badge, Button, Field, Input, Switch } from '@/components/ui/primitives';
 import { DataList, EmptyState, PageHeader, QueryState } from '@/components/ui/states';
 import { t } from '@/i18n/ar';
 import { api } from '@/lib/api';
 import { errorMessage } from '@/lib/errors';
 import { supabase, unwrap } from '@/lib/supabase';
 import { useIsAdmin, WithUniversity } from './common';
+import { effectivePermissions, PermissionPicker } from './PermissionPicker';
 
 type StaffRow = {
   id: string;
@@ -17,6 +19,7 @@ type StaffRow = {
   full_name: string;
   phone: string | null;
   is_active: boolean;
+  permissions: string[] | null;
   students: { id: string }[] | { id: string } | null;
 };
 
@@ -36,13 +39,14 @@ function SupervisorsBody({ universityId }: { universityId: string }) {
   const [creating, setCreating] = useState(false);
   const [demoting, setDemoting] = useState<StaffRow | null>(null);
   const [resetting, setResetting] = useState<StaffRow | null>(null);
+  const [editingPerms, setEditingPerms] = useState<StaffRow | null>(null);
   const query = useQuery({
     queryKey: ['supervisors', universityId],
     queryFn: async () =>
       unwrap(
         await supabase
           .from('profiles')
-          .select('id, login_code, role, full_name, phone, is_active, students(id)')
+          .select('id, login_code, role, full_name, phone, is_active, permissions, students(id)')
           .eq('university_id', universityId)
           .in('role', ['supervisor', 'university_supervisor'])
           .order('login_code'),
@@ -90,6 +94,15 @@ function SupervisorsBody({ universityId }: { universityId: string }) {
               { key: 'name', header: t.common.name, cell: (r) => r.full_name, mobileHidden: true },
               { key: 'role', header: sv.role, cell: (r) => t.roles[r.role] },
               {
+                key: 'perms',
+                header: sv.permissions,
+                cell: (r) => (
+                  <Badge tone="neutral" data-testid="perm-count">
+                    {sv.pagesCount(effectivePermissions(r.role, r.permissions).length)}
+                  </Badge>
+                ),
+              },
+              {
                 key: 'kind',
                 header: t.common.details,
                 cell: (r) => <Badge tone={hasStudent(r) ? 'info' : 'neutral'}>{hasStudent(r) ? sv.promoted : sv.standalone}</Badge>,
@@ -108,6 +121,12 @@ function SupervisorsBody({ universityId }: { universityId: string }) {
                       header: t.common.actions,
                       cell: (r: StaffRow) => (
                         <div className="flex flex-wrap gap-2">
+                          {!hasStudent(r) ? (
+                            <Button size="sm" variant="secondary" onClick={() => setEditingPerms(r)} data-testid="edit-permissions">
+                              <ShieldCheck className="h-4 w-4" aria-hidden />
+                              {sv.permissions}
+                            </Button>
+                          ) : null}
                           {!hasStudent(r) ? (
                             <Button size="sm" onClick={() => setResetting(r)}>
                               <KeyRound className="h-4 w-4" aria-hidden />
@@ -131,6 +150,7 @@ function SupervisorsBody({ universityId }: { universityId: string }) {
       </QueryState>
       {creating ? <CreateDialog universityId={universityId} onClose={() => setCreating(false)} onDone={invalidate} /> : null}
       {resetting ? <ResetDialog row={resetting} onClose={() => setResetting(null)} /> : null}
+      {editingPerms ? <PermissionsDialog row={editingPerms} onClose={() => setEditingPerms(null)} onDone={invalidate} /> : null}
       <ConfirmDialog
         open={demoting !== null}
         onOpenChange={(o) => !o && setDemoting(null)}
@@ -146,10 +166,11 @@ function SupervisorsBody({ universityId }: { universityId: string }) {
 function CreateDialog({ universityId, onClose, onDone }: { universityId: string; onClose: () => void; onDone: () => void }) {
   const sv = t.admin.supervisors;
   const toast = useToast();
-  const [form, setForm] = useState({ login_code: '', full_name: '', phone: '', password: '', role: 'supervisor' });
-  const ids = { code: useId(), name: useId(), phone: useId(), pw: useId(), role: useId() };
+  const [form, setForm] = useState({ login_code: '', full_name: '', phone: '', password: '' });
+  const [permissions, setPermissions] = useState<Permission[]>(['scan']);
+  const ids = { code: useId(), name: useId(), phone: useId(), pw: useId() };
   const save = useMutation({
-    mutationFn: () => api.post('/supervisors', { ...form, phone: form.phone || null, university_id: universityId }),
+    mutationFn: () => api.post('/supervisors', { ...form, phone: form.phone || null, university_id: universityId, permissions }),
     onSuccess: () => {
       toast.success(t.common.success);
       onDone();
@@ -157,7 +178,8 @@ function CreateDialog({ universityId, onClose, onDone }: { universityId: string;
     },
     onError: (e) => toast.error(errorMessage(e)),
   });
-  const valid = /^[A-Za-z0-9._-]{2,40}$/.test(form.login_code) && form.full_name.trim().length >= 2 && form.password.length >= 6;
+  const valid =
+    /^[A-Za-z0-9._-]{2,40}$/.test(form.login_code) && form.full_name.trim().length >= 2 && form.password.length >= 6 && permissions.length > 0;
   const submit = (e: FormEvent) => {
     e.preventDefault();
     if (valid) save.mutate();
@@ -174,22 +196,53 @@ function CreateDialog({ universityId, onClose, onDone }: { universityId: string;
         <Field label={t.student.phone} htmlFor={ids.phone}>
           <Input id={ids.phone} dir="ltr" className="text-start" inputMode="tel" value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} />
         </Field>
-        <Field label={sv.role} htmlFor={ids.role}>
-          <Select id={ids.role} value={form.role} onChange={(e) => setForm({ ...form, role: e.target.value })}>
-            <option value="supervisor">{t.roles.supervisor}</option>
-            <option value="university_supervisor">{t.roles.university_supervisor}</option>
-          </Select>
-        </Field>
         <Field label={sv.password} htmlFor={ids.pw}>
           <Input id={ids.pw} dir="ltr" className="text-start" value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} />
         </Field>
+        <PermissionPicker value={permissions} onChange={setPermissions} />
+        {!permissions.length ? <p className="text-sm font-semibold text-danger">{sv.permissionsRequired}</p> : null}
         <div className="flex justify-end gap-2">
           <Button onClick={onClose}>{t.common.cancel}</Button>
-          <Button type="submit" variant="secondary" disabled={!valid || save.isPending}>
+          <Button type="submit" variant="secondary" disabled={!valid || save.isPending} data-testid="supervisor-save">
             {t.common.save}
           </Button>
         </div>
       </form>
+    </Dialog>
+  );
+}
+
+/** Edit which pages an existing supervisor may open; the role follows (see set_staff_permissions). */
+function PermissionsDialog({ row, onClose, onDone }: { row: StaffRow; onClose: () => void; onDone: () => void }) {
+  const sv = t.admin.supervisors;
+  const toast = useToast();
+  const [permissions, setPermissions] = useState<Permission[]>(() => effectivePermissions(row.role, row.permissions));
+  const save = useMutation({
+    mutationFn: async () => unwrap(await supabase.rpc('set_staff_permissions', { p_profile_id: row.id, p_permissions: permissions })),
+    onSuccess: () => {
+      toast.success(sv.permissionsSaved);
+      onDone();
+      onClose();
+    },
+    onError: (e) => toast.error(errorMessage(e)),
+  });
+  return (
+    <Dialog
+      open
+      onOpenChange={(o) => !o && onClose()}
+      title={sv.permissionsTitle}
+      description={`${row.full_name} · ${row.login_code}`}
+      footer={
+        <>
+          <Button onClick={onClose}>{t.common.cancel}</Button>
+          <Button variant="secondary" disabled={!permissions.length || save.isPending} onClick={() => save.mutate()} data-testid="permissions-save">
+            {save.isPending ? t.common.saving : t.common.save}
+          </Button>
+        </>
+      }
+    >
+      <PermissionPicker value={permissions} onChange={setPermissions} />
+      {!permissions.length ? <p className="mt-2 text-sm font-semibold text-danger">{sv.permissionsRequired}</p> : null}
     </Dialog>
   );
 }

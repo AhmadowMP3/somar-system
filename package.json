@@ -27,7 +27,7 @@
     "generate:vapid": "tsx scripts/generate-vapid.ts",
     "db:push": "supabase db push",
     "db:apply": "tsx scripts/db-apply.ts",
-    "supabase:start": "supabase start -x studio,realtime,edge-runtime,logflare,vector,mailpit,imgproxy,postgres-meta,supavisor",
+    "supabase:start": "supabase start -x studio,edge-runtime,logflare,vector,mailpit,imgproxy,postgres-meta,supavisor",
     "review": "tsx scripts/review.ts",
     "review:stop": "tsx scripts/review.ts --stop",
     "tour": "tsx scripts/tour.ts",
