@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { BellRing, CalendarClock, ChevronLeft, KeyRound, LogOut, MapPinned, Navigation, Package as PackageIcon, ScanLine } from 'lucide-react';
+import { BellRing, CalendarClock, ChevronDown, ChevronLeft, KeyRound, LogOut, MapPinned, Navigation, Package as PackageIcon, ScanLine } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { formatClock, formatDate, formatDateTime, formatPhoneDisplay, formatTime } from '@somar/shared';
@@ -14,6 +14,7 @@ import { api } from '@/lib/api';
 import { errorMessage } from '@/lib/errors';
 import { currentPushState, enablePush } from '@/lib/push';
 import { PHOTO_BUCKET, signedUrl, supabase, unwrap } from '@/lib/supabase';
+import { cn } from '@/lib/utils';
 
 export type Dashboard = {
   student: {
@@ -339,6 +340,14 @@ export function RoutesPage() {
   const { me } = useAuth();
   const query = useRoutes(me?.student?.university_id, true);
   const [stop, setStop] = useState<{ route: RouteRow; stop: StopRow } | null>(null);
+  const [openIds, setOpenIds] = useState<Set<string>>(new Set());
+  const toggle = (id: string) =>
+    setOpenIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
   return (
     <div>
       <PageHeader title={t.student.routesTitle} />
@@ -348,20 +357,27 @@ export function RoutesPage() {
             {rows.map((r) => (
               <li key={r.id}>
                 <Card className="p-3">
-                  <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
-                    <p className="font-bold">{r.name}</p>
-                    <span className="flex items-center gap-2 text-sm">
+                  <button
+                    type="button"
+                    className="flex min-h-touch w-full items-center justify-between gap-2 text-start"
+                    aria-expanded={openIds.has(r.id)}
+                    onClick={() => toggle(r.id)}
+                    data-testid="route-toggle"
+                  >
+                    <span className="flex flex-wrap items-center gap-2">
+                      <span className="font-bold">{r.name}</span>
                       <Badge tone="info">{t.admin.routes.directions[r.direction]}</Badge>
                       {r.departure_time ? (
-                        <span className="num flex items-center gap-1 font-semibold">
+                        <span className="num flex items-center gap-1 text-sm font-semibold">
                           <CalendarClock className="h-4 w-4" aria-hidden />
                           {formatClock(r.departure_time)}
                         </span>
                       ) : null}
                     </span>
-                  </div>
-                  {r.notes ? <p className="mb-2 text-sm text-muted">{r.notes}</p> : null}
-                  {r.route_stops.length ? (
+                    <ChevronDown className={cn('h-5 w-5 shrink-0 text-muted transition-transform', openIds.has(r.id) && 'rotate-180')} aria-hidden />
+                  </button>
+                  {!openIds.has(r.id) ? null : r.notes ? <p className="my-2 text-sm text-muted">{r.notes}</p> : null}
+                  {!openIds.has(r.id) ? null : r.route_stops.length ? (
                     <ol className="space-y-1">
                       {r.route_stops.map((s) => (
                         <li key={s.id}>
@@ -575,6 +591,12 @@ export function AccountPage() {
               <p className="mt-3 text-xs text-muted">{t.student.readOnlyNote}</p>
             </Card>
             <PushCard />
+            <Button asChild size="lg" variant="secondary" className="w-full">
+              <Link to="/schedule">
+                <CalendarClock className="h-5 w-5" aria-hidden />
+                {t.nav.mySchedule}
+              </Link>
+            </Button>
             <div className="grid gap-2 sm:grid-cols-2">
               <Button asChild size="lg">
                 <Link to="/password">

@@ -129,6 +129,7 @@ export async function createE2EStudent(
   if (opts.ready) {
     await service.auth.admin.updateUserById(res.profileId, { password: opts.password ?? STAFF_PASSWORD });
     await service.from('profiles').update({ must_change_password: false }).eq('id', res.profileId);
+    await service.from('students').update({ setup_completed_at: new Date().toISOString() }).eq('id', res.studentId);
   }
   const { data } = await service.from('students').select('qr_token').eq('id', res.studentId).single();
   return { id: res.studentId, transportNumber: res.transportNumber, profileId: res.profileId, qrToken: data?.qr_token as string, name };

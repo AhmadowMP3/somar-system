@@ -1,14 +1,16 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { ArrowDown, ArrowUp, Check, Copy, CopyPlus, ExternalLink, Pencil, Plus, Search, Trash2 } from 'lucide-react';
+import { ArrowDown, ArrowUp, ChevronDown, Copy, CopyPlus, ExternalLink, Pencil, Plus, Trash2 } from 'lucide-react';
 import { useId, useState, type FormEvent } from 'react';
-import { foldArabic, formatClock } from '@somar/shared';
+import { formatClock } from '@somar/shared';
 import { Link } from 'react-router-dom';
-import { useRoutes, useStopLibrary, type LibraryStop, type RouteRow, type StopRow } from '@/features/student/StudentPages';
+import { useRoutes, useStopLibrary, type RouteRow, type StopRow } from '@/features/student/StudentPages';
+import { SearchPicker } from '@/components/SearchPicker';
 import { ConfirmDialog, Dialog, useToast } from '@/components/ui/overlay';
 import { Badge, Button, Card, Field, Input, Select, Switch, Textarea } from '@/components/ui/primitives';
 import { EmptyState, PageHeader, QueryState } from '@/components/ui/states';
 import { t } from '@/i18n/ar';
 import { errorMessage } from '@/lib/errors';
+import { cn } from '@/lib/utils';
 import { supabase, unwrap } from '@/lib/supabase';
 import { ActiveBadge, DayToggles, WithUniversity } from './common';
 
@@ -41,6 +43,14 @@ function RoutesBody({ universityId }: { universityId: string }) {
     onError: (e) => toast.error(errorMessage(e)),
   });
   const [copyingStop, setCopyingStop] = useState<{ route: RouteRow; stop: StopRow } | null>(null);
+  const [openIds, setOpenIds] = useState<Set<string>>(new Set());
+  const toggle = (id: string) =>
+    setOpenIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
   const duplicate = useMutation({
     mutationFn: async (route: RouteRow) =>
       unwrap(await supabase.rpc('duplicate_route', { p_route_id: route.id, p_name: `${route.name}${r.copySuffix}` })) as string,
@@ -48,6 +58,7 @@ function RoutesBody({ universityId }: { universityId: string }) {
       toast.success(r.duplicated);
       const fresh = await query.refetch();
       const copy = fresh.data?.find((x) => x.id === newId);
+      setOpenIds((prev) => new Set(prev).add(newId));
       if (copy) setEditingRoute(copy);
     },
     onError: (e) => toast.error(errorMessage(e)),
@@ -75,28 +86,38 @@ function RoutesBody({ universityId }: { universityId: string }) {
             {rows.map((route) => (
               <li key={route.id}>
                 <Card>
-                  <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <p className="text-lg font-bold">{route.name}</p>
+                  <button
+                    type="button"
+                    className="flex w-full items-center justify-between gap-2 text-start"
+                    aria-expanded={openIds.has(route.id)}
+                    onClick={() => toggle(route.id)}
+                    data-testid="route-toggle"
+                  >
+                    <span className="flex flex-wrap items-center gap-2">
+                      <span className="text-lg font-bold">{route.name}</span>
                       <Badge tone="info">{r.directions[route.direction]}</Badge>
                       {route.departure_time ? <Badge className="num">{formatClock(route.departure_time)}</Badge> : null}
+                      <Badge>{r.stopCount(route.route_stops.length)}</Badge>
                       <ActiveBadge active={route.is_active} />
-                    </div>
-                    <div className="flex gap-2">
-                      <Button size="sm" onClick={() => setEditingRoute(route)}>
-                        <Pencil className="h-4 w-4" aria-hidden />
-                        {t.common.edit}
-                      </Button>
-                      <Button size="sm" onClick={() => duplicate.mutate(route)} disabled={duplicate.isPending} data-testid={`duplicate-${route.id}`}>
-                        <Copy className="h-4 w-4" aria-hidden />
-                        {r.duplicate}
-                      </Button>
-                      <Button size="sm" variant="secondary" onClick={() => setEditingStop({ route, stop: null })}>
-                        <Plus className="h-4 w-4" aria-hidden />
-                        {r.addStop}
-                      </Button>
-                    </div>
-                  </div>
+                    </span>
+                    <ChevronDown className={cn('h-5 w-5 shrink-0 transition-transform', openIds.has(route.id) && 'rotate-180')} aria-hidden />
+                  </button>
+                  {openIds.has(route.id) ? (
+                    <div className="mt-3 space-y-3">
+                      <div className="flex flex-wrap gap-2">
+                        <Button size="sm" onClick={() => setEditingRoute(route)}>
+                          <Pencil className="h-4 w-4" aria-hidden />
+                          {t.common.edit}
+                        </Button>
+                        <Button size="sm" onClick={() => duplicate.mutate(route)} disabled={duplicate.isPending} data-testid={`duplicate-${route.id}`}>
+                          <Copy className="h-4 w-4" aria-hidden />
+                          {r.duplicate}
+                        </Button>
+                        <Button size="sm" variant="secondary" onClick={() => setEditingStop({ route, stop: null })}>
+                          <Plus className="h-4 w-4" aria-hidden />
+                          {r.addStop}
+                        </Button>
+                      </div>
                   {route.active_days?.length ? (
                     <p className="mb-2 text-sm text-muted">
                       {r.activeDays}: {route.active_days.map((d) => t.days[d]).join(t.listSeparator)}
@@ -142,6 +163,8 @@ function RoutesBody({ universityId }: { universityId: string }) {
                   ) : (
                     <p className="text-sm text-muted">{t.student.noStops}</p>
                   )}
+                    </div>
+                  ) : null}
                 </Card>
               </li>
             ))}
@@ -225,50 +248,6 @@ function CopyStopDialog({ source, stop, routes, onClose, onSaved }: {
   );
 }
 
-/** Search-as-you-type stop picker (Arabic spelling variants are folded, e.g. أ/ا، ة/ه، ى/ي). */
-function StopPicker({ stops, value, onChange }: { stops: LibraryStop[]; value: string; onChange: (id: string) => void }) {
-  const r = t.admin.routes;
-  const [term, setTerm] = useState('');
-  const needle = foldArabic(term);
-  const matches = needle ? stops.filter((s) => foldArabic(s.name).includes(needle)) : stops;
-  return (
-    <div className="space-y-2">
-      <div className="relative">
-        <Search className="pointer-events-none absolute inset-y-0 start-3 my-auto h-4 w-4 text-muted" aria-hidden />
-        <Input
-          value={term}
-          onChange={(e) => setTerm(e.target.value)}
-          placeholder={r.searchStop}
-          aria-label={r.searchStop}
-          className="ps-9"
-          data-testid="stop-search"
-        />
-      </div>
-      <ul role="listbox" aria-label={r.pickStop} className="max-h-60 overflow-y-auto rounded-lg border border-border" data-testid="stop-options">
-        {matches.length ? (
-          matches.map((s) => (
-            <li key={s.id} role="option" aria-selected={s.id === value}>
-              <button
-                type="button"
-                onClick={() => onChange(s.id)}
-                className={
-                  s.id === value
-                    ? 'flex min-h-touch w-full items-center justify-between gap-2 bg-brand-ink px-3 text-start text-white'
-                    : 'flex min-h-touch w-full items-center justify-between gap-2 px-3 text-start hover:bg-surface'
-                }
-              >
-                <span>{s.name}</span>
-                {s.id === value ? <Check className="h-4 w-4" aria-hidden /> : null}
-              </button>
-            </li>
-          ))
-        ) : (
-          <li className="px-3 py-3 text-sm text-muted">{r.noMatches}</li>
-        )}
-      </ul>
-    </div>
-  );
-}
 
 function TimeChangeConfirm({ pending, onCancel }: { pending: Pending; onCancel: () => void }) {
   return (
@@ -429,7 +408,7 @@ function StopDialog({ universityId, route, stop, onClose, onSaved }: {
         ) : (
           <form className="space-y-4" onSubmit={submit}>
             <Field label={r.pickStop} hint={chosen ? (chosen.lat !== null ? `${r.coords}: ${chosen.lat}, ${chosen.lng}` : r.coordsMissing) : undefined}>
-              <StopPicker stops={options} value={stopId} onChange={setStopId} />
+              <SearchPicker items={options} value={stopId} onChange={setStopId} placeholder={r.searchStop} label={r.pickStop} emptyText={r.noMatches} testId="stop" />
             </Field>
             <Field label={r.departure} htmlFor={ids.time}>
               <Input id={ids.time} type="time" value={time} onChange={(e) => setTime(e.target.value)} />

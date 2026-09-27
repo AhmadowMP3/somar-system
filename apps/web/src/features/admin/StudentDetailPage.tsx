@@ -316,6 +316,8 @@ export default function StudentDetailPage() {
               </div>
             </Card>
 
+            <ScheduleCard studentId={st.id} />
+
             <div className="grid gap-4 lg:grid-cols-2">
               <Card>
                 <CardTitle>{s.adjustments}</CardTitle>
@@ -543,5 +545,38 @@ function AdjustDialog({ subscriptionId, onClose, onDone }: { subscriptionId: str
         </div>
       </form>
     </Dialog>
+  );
+}
+
+function ScheduleCard({ studentId }: { studentId: string }) {
+  const s = t.admin.students;
+  const query = useQuery({
+    queryKey: ['student-schedule', studentId],
+    queryFn: async () =>
+      unwrap(
+        await supabase.from('student_schedule').select('dow, outbound_time, return_time').eq('student_id', studentId).order('dow'),
+      ) as { dow: number; outbound_time: string; return_time: string }[],
+  });
+  return (
+    <Card>
+      <CardTitle>{s.weeklySchedule}</CardTitle>
+      <QueryState query={query} empty={(rows) => (rows.length ? null : <p className="text-sm text-muted">{s.noSchedule}</p>)}>
+        {(rows) => (
+          <ul className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4" data-testid="student-schedule">
+            {rows.map((r) => (
+              <li key={r.dow} className="rounded-lg bg-surface p-2 text-sm">
+                <p className="font-bold">{t.days[r.dow]}</p>
+                <p>
+                  {t.setup.outbound}: <span className="num font-semibold">{formatClock(r.outbound_time)}</span>
+                </p>
+                <p>
+                  {t.setup.return}: <span className="num font-semibold">{formatClock(r.return_time)}</span>
+                </p>
+              </li>
+            ))}
+          </ul>
+        )}
+      </QueryState>
+    </Card>
   );
 }

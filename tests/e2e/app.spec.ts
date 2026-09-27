@@ -48,6 +48,16 @@ test('1. student first login → forced password change → sign-out → login �
   await page.getByTestId('photo-file-input').setInputFiles({ name: 'me.jpg', mimeType: 'image/jpeg', buffer: await jpegFile() });
   await page.getByRole('button', { name: 'تأكيد ورفع الصورة' }).click();
 
+  // first-login setup: area (searchable) + weekly departure/return times
+  await expect(page).toHaveURL(/\/setup$/);
+  await page.getByTestId('setup-area-search').fill('رجاء');
+  await page.getByTestId('setup-area-options').getByText('الرجاء', { exact: true }).click();
+  for (const dow of [1, 2, 3, 4, 5, 7]) await page.getByTestId(`day-${dow}`).uncheck();
+  await page.getByTestId('day-6').check();
+  await page.getByTestId('out-6').fill('07:30');
+  await page.getByTestId('ret-6').fill('14:00');
+  await page.getByTestId('setup-save').click();
+
   await expect(page).toHaveURL(/\/$/);
   await expect(page.getByTestId('transport-number')).toHaveText(st.transportNumber);
   await expect(page.getByTestId('remaining')).toContainText(String(uni.tripsPerWeek));
@@ -157,6 +167,7 @@ test('6. a student opens a stop and the Google Maps link carries the stored URL'
   await login(page, st.transportNumber, STAFF_PASSWORD);
   await expect(page).toHaveURL(/\/$/);
   await page.getByRole('link', { name: 'الخطوط' }).click();
+  await page.getByTestId('route-toggle').first().click();
   await page.getByTestId('stop-button').first().click();
   const link = page.getByTestId('maps-link');
   await expect(link).toHaveText(/الاتجاهات على خرائط غوغل/);
@@ -191,7 +202,7 @@ test('7. no English text is visible on the main screens of every role', async ({
 
   await login(page, st.transportNumber, STAFF_PASSWORD);
   await expect(page).toHaveURL(/\/$/);
-  await visit(['/', '/trips', '/packages', '/routes', '/notifications', '/account', '/password']);
+  await visit(['/', '/trips', '/packages', '/routes', '/notifications', '/account', '/password', '/schedule']);
   await page.context().clearCookies();
   await page.evaluate(() => localStorage.clear());
 
@@ -219,6 +230,8 @@ test('7. no English text is visible on the main screens of every role', async ({
     '/admin/notifications',
     '/admin/settings',
     '/admin/audit',
+    '/admin/stats',
+    '/admin/stops',
     `/admin/cards?ids=${st.id}`,
   ]);
   expect(offenders).toEqual([]);
@@ -238,6 +251,7 @@ test('8. admin saves a stop once in the library and adds it to a route from the 
 
   await page.goto('/admin/routes');
   await pickUniversity(page, uni.id);
+  await page.getByTestId('route-toggle').first().click();
   await page.getByRole('button', { name: 'إضافة نقطة وقوف' }).first().click();
   const options = page.getByTestId('stop-options');
   await expect(options.getByText('ساحة جامعة')).toHaveCount(0);

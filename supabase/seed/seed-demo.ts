@@ -166,6 +166,39 @@ function shuffle<T>(items: T[]): T[] {
 
 const WEEK_ORDER = [6, 7, 1, 2, 3, 4, 5];
 
+const hhmm = (minutes: number) => `${String(Math.floor(minutes / 60)).padStart(2, '0')}:${String(minutes % 60).padStart(2, '0')}`;
+
+/**
+ * Gives every demo student who already has a photo (i.e. who would have passed the first-login setup)
+ * a weekly schedule for their work days and marks setup as completed. Idempotent.
+ */
+async function backfillSchedules(universityId: string): Promise<number> {
+  const { data } = await db
+    .from('students')
+    .select('id, work_days, shift_start')
+    .eq('university_id', universityId)
+    .not('photo_path', 'is', null)
+    .is('setup_completed_at', null);
+  const students = (data ?? []) as { id: string; work_days: number[]; shift_start: string }[];
+  const rows: Record<string, unknown>[] = [];
+  for (const st of students) {
+    const [h, m] = st.shift_start.split(':').map(Number);
+    const start = (h ?? 8) * 60 + (m ?? 0);
+    for (const dow of st.work_days) {
+      const outbound = start - 60 + r.pick([0, 15, 30]);
+      rows.push({ student_id: st.id, dow, outbound_time: hhmm(outbound), return_time: hhmm(start + r.pick([240, 300, 360, 420])) });
+    }
+  }
+  for (let i = 0; i < rows.length; i += 500) must(await db.from('student_schedule').upsert(rows.slice(i, i + 500)), 'schedules');
+  if (students.length) {
+    must(
+      await db.from('students').update({ setup_completed_at: new Date().toISOString() }).in('id', students.map((s) => s.id)),
+      'setup flag',
+    );
+  }
+  return students.length;
+}
+
 async function main() {
   const args = process.argv.slice(2);
   await guard(args);
@@ -176,7 +209,8 @@ async function main() {
 
   const { data: existing } = await demoUniversity();
   if (existing) {
-    console.log('demo university already exists — nothing to do (use --reset to rebuild)');
+    const filled = await backfillSchedules(existing.id as string);
+    console.log(`demo university already exists — nothing to do (use --reset to rebuild)${filled ? `; weekly schedules added for ${filled} students` : ''}`);
     return;
   }
 
@@ -325,6 +359,9 @@ async function main() {
     must(await db.storage.from(cfg.SUPABASE_PHOTO_BUCKET).upload(path, await avatarJpeg(s.index, s.female), { contentType: 'image/jpeg', upsert: true }), 'photo');
     await db.from('students').update({ photo_path: path, photo_uploaded_at: new Date().toISOString() }).eq('id', s.id);
   }
+
+  // students with a photo have finished first-login setup: weekly schedule around their shift start
+  await backfillSchedules(uni.id);
 
   // subscriptions for 72 of 80 (90%); history needs them to start 4 weeks back
   const subscribed = students.filter((s) => s.index < 72);

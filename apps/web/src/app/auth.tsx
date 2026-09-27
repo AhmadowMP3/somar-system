@@ -19,7 +19,13 @@ export type Profile = {
 
 export type Me = {
   profile: Profile | null;
-  student: { id: string; photo_path: string | null; university_id: string; transport_number: string } | null;
+  student: {
+    id: string;
+    photo_path: string | null;
+    university_id: string;
+    transport_number: string;
+    setup_completed_at: string | null;
+  } | null;
 };
 
 type AuthState = {
@@ -75,7 +81,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const student = unwrap(
         await supabase
           .from('students')
-          .select('id, photo_path, university_id, transport_number')
+          .select('id, photo_path, university_id, transport_number, setup_completed_at')
           .eq('profile_id', uid as string)
           .maybeSingle<Me['student'] & object>(),
       );
