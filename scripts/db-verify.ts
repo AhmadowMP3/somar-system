@@ -15,7 +15,7 @@ export const APP_TABLES = [
 const FUNCTIONS = [
   'perform_scan', 'cancel_scan', 'student_week_balance', 'student_dashboard', 'my_scans_today', 'run_daily_jobs',
   'assign_subscription', 'bulk_adjust_package', 'allocate_transport_number', 'provision_student', 'admin_dashboard',
-  'save_my_setup', 'schedule_stats', 'duplicate_route',
+  'save_my_setup', 'save_student_schedule', 'schedule_stats', 'duplicate_route',
 ];
 const INDEXES = ['scans_one_direction_per_day_idx', 'subscriptions_one_active_idx'];
 

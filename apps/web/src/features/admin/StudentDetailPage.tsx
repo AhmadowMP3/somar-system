@@ -9,6 +9,7 @@ import { QrCode } from '@/components/QrCode';
 import { ConfirmDialog, Dialog, useToast } from '@/components/ui/overlay';
 import { Badge, Button, Card, CardTitle, Field, Input, Select, Textarea } from '@/components/ui/primitives';
 import { EmptyState, PageHeader, QueryState } from '@/components/ui/states';
+import { DaysEditor, scheduleProblem, toDayRows, toSchedulePayload, type DayRow, type ScheduleRow } from '@/features/student/SetupPage';
 import type { Dashboard } from '@/features/student/StudentPages';
 import { t } from '@/i18n/ar';
 import { api } from '@/lib/api';
@@ -316,7 +317,7 @@ export default function StudentDetailPage() {
               </div>
             </Card>
 
-            <ScheduleCard studentId={st.id} />
+            <ScheduleCard studentId={st.id} workDays={st.work_days} />
 
             <div className="grid gap-4 lg:grid-cols-2">
               <Card>
@@ -548,18 +549,51 @@ function AdjustDialog({ subscriptionId, onClose, onDone }: { subscriptionId: str
   );
 }
 
-function ScheduleCard({ studentId }: { studentId: string }) {
+function ScheduleCard({ studentId, workDays }: { studentId: string; workDays: number[] }) {
   const s = t.admin.students;
+  const qc = useQueryClient();
+  const toast = useToast();
+  const { university } = useScope();
+  const [days, setDays] = useState<DayRow[] | null>(null);
+  const [error, setError] = useState<string | null>(null);
   const query = useQuery({
     queryKey: ['student-schedule', studentId],
     queryFn: async () =>
       unwrap(
         await supabase.from('student_schedule').select('dow, outbound_time, return_time').eq('student_id', studentId).order('dow'),
-      ) as { dow: number; outbound_time: string; return_time: string }[],
+      ) as ScheduleRow[],
   });
+  const save = useMutation({
+    mutationFn: async (rows: DayRow[]) =>
+      unwrap(await supabase.rpc('save_student_schedule', { p_student_id: studentId, p_schedule: toSchedulePayload(rows) })),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ['student-schedule', studentId] });
+      void qc.invalidateQueries({ queryKey: ['student', studentId] });
+      void qc.invalidateQueries({ queryKey: ['schedule-stats'] });
+      toast.success(t.setup.saved);
+      setDays(null);
+    },
+    onError: (e) => setError(errorMessage(e)),
+  });
+  const openEditor = () => {
+    setError(null);
+    setDays(toDayRows(university?.week_start_dow ?? 6, query.data ?? [], workDays));
+  };
+  const submit = () => {
+    if (!days) return;
+    const problem = scheduleProblem(days);
+    setError(problem);
+    if (!problem) save.mutate(days);
+  };
   return (
     <Card>
-      <CardTitle>{s.weeklySchedule}</CardTitle>
+      <div className="mb-3 flex items-center justify-between gap-2">
+        <CardTitle className="mb-0">{s.weeklySchedule}</CardTitle>
+        <Button size="sm" variant="outline" disabled={!query.data} onClick={openEditor} data-testid="edit-schedule">
+          <Pencil className="h-4 w-4" aria-hidden />
+          {s.editSchedule}
+        </Button>
+      </div>
       <QueryState query={query} empty={(rows) => (rows.length ? null : <p className="text-sm text-muted">{s.noSchedule}</p>)}>
         {(rows) => (
           <ul className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4" data-testid="student-schedule">
@@ -577,6 +611,29 @@ function ScheduleCard({ studentId }: { studentId: string }) {
           </ul>
         )}
       </QueryState>
+      <Dialog
+        open={days !== null}
+        onOpenChange={(o) => (o ? undefined : setDays(null))}
+        title={s.editSchedule}
+        description={s.editScheduleHint}
+        footer={
+          <>
+            <Button variant="ghost" onClick={() => setDays(null)}>
+              {t.common.cancel}
+            </Button>
+            <Button variant="primary" disabled={save.isPending} onClick={submit} data-testid="schedule-save">
+              {save.isPending ? t.common.saving : t.common.save}
+            </Button>
+          </>
+        }
+      >
+        {days ? <DaysEditor days={days} onChange={setDays} /> : null}
+        {error ? (
+          <p role="alert" className="mt-3 rounded-lg bg-danger/10 p-3 text-sm font-semibold text-danger">
+            {error}
+          </p>
+        ) : null}
+      </Dialog>
     </Card>
   );
 }

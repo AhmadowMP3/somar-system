@@ -4,19 +4,46 @@ import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/app/auth';
 import { CreditFooter, Logo } from '@/components/common';
 import { SearchPicker } from '@/components/SearchPicker';
-import { useToast } from '@/components/ui/overlay';
 import { Button, Card, Field, Input } from '@/components/ui/primitives';
-import { ListSkeleton, PageHeader } from '@/components/ui/states';
+import { ListSkeleton } from '@/components/ui/states';
 import { t } from '@/i18n/ar';
 import { errorMessage } from '@/lib/errors';
 import { supabase, unwrap } from '@/lib/supabase';
 import { cn } from '@/lib/utils';
 
-type DayRow = { dow: number; on: boolean; outbound: string; ret: string };
+export type DayRow = { dow: number; on: boolean; outbound: string; ret: string };
+export type ScheduleRow = { dow: number; outbound_time: string; return_time: string };
 
 /** Week order starting from the university's week-start day. */
 function weekOrder(start: number): number[] {
   return Array.from({ length: 7 }, (_, i) => ((start - 1 + i) % 7) + 1);
+}
+
+/** Editor rows for all seven days; with no saved schedule the current work days start ticked. */
+export function toDayRows(weekStart: number, schedule: ScheduleRow[], workDays: number[]): DayRow[] {
+  return weekOrder(weekStart).map((dow) => {
+    const row = schedule.find((x) => x.dow === dow);
+    return {
+      dow,
+      on: row ? true : schedule.length === 0 && workDays.includes(dow),
+      outbound: row?.outbound_time.slice(0, 5) ?? '',
+      ret: row?.return_time.slice(0, 5) ?? '',
+    };
+  });
+}
+
+/** Arabic message for the first problem in the ticked days, or null when they can be saved. */
+export function scheduleProblem(days: DayRow[]): string | null {
+  const s = t.setup.errors;
+  const active = days.filter((d) => d.on);
+  if (!active.length) return s.noDays ?? null;
+  if (active.some((d) => !d.outbound || !d.ret)) return s.missingTime ?? null;
+  if (active.some((d) => d.ret <= d.outbound)) return s.order ?? null;
+  return null;
+}
+
+export function toSchedulePayload(days: DayRow[]) {
+  return days.filter((d) => d.on).map((d) => ({ dow: d.dow, outbound: d.outbound, return: d.ret }));
 }
 
 function useSetupData(studentId: string | undefined, universityId: string | undefined) {
@@ -40,12 +67,11 @@ function useSetupData(studentId: string | undefined, universityId: string | unde
   });
 }
 
-export function SetupForm({ mode }: { mode: 'first' | 'edit' }) {
+function SetupForm() {
   const s = t.setup;
   const { me, refreshMe } = useAuth();
   const navigate = useNavigate();
   const qc = useQueryClient();
-  const toast = useToast();
   const data = useSetupData(me?.student?.id, me?.student?.university_id);
   const [areaId, setAreaId] = useState('');
   const [residence, setResidence] = useState('');
@@ -58,17 +84,7 @@ export function SetupForm({ mode }: { mode: 'first' | 'edit' }) {
     const { student, schedule, weekStart } = data.data;
     setAreaId(student.area_primary_id ?? '');
     setResidence(student.residence_text ?? '');
-    setDays(
-      weekOrder(weekStart).map((dow) => {
-        const row = schedule.find((x) => x.dow === dow);
-        return {
-          dow,
-          on: row ? true : schedule.length === 0 && student.work_days.includes(dow),
-          outbound: row?.outbound_time.slice(0, 5) ?? '',
-          ret: row?.return_time.slice(0, 5) ?? '',
-        };
-      }),
-    );
+    setDays(toDayRows(weekStart, schedule, student.work_days));
   }, [data.data]);
 
   const save = useMutation({
@@ -77,36 +93,24 @@ export function SetupForm({ mode }: { mode: 'first' | 'edit' }) {
         await supabase.rpc('save_my_setup', {
           p_area_id: areaId,
           p_residence: residence,
-          p_schedule: days.filter((d) => d.on).map((d) => ({ dow: d.dow, outbound: d.outbound, return: d.ret })),
+          p_schedule: toSchedulePayload(days),
         }),
       ),
     onSuccess: async () => {
       void qc.invalidateQueries({ queryKey: ['my-setup'] });
       void qc.invalidateQueries({ queryKey: ['student-dashboard'] });
       await refreshMe();
-      if (mode === 'first') navigate('/', { replace: true });
-      else toast.success(s.saved);
+      navigate('/', { replace: true });
     },
     onError: (e) => setError(errorMessage(e)),
   });
 
   const submit = (e: FormEvent) => {
     e.preventDefault();
-    const active = days.filter((d) => d.on);
-    const problem = !areaId
-      ? s.errors.area
-      : !active.length
-        ? s.errors.noDays
-        : active.some((d) => !d.outbound || !d.ret)
-          ? s.errors.missingTime
-          : active.some((d) => d.ret <= d.outbound)
-            ? s.errors.order
-            : null;
-    setError(problem ?? null);
+    const problem = !areaId ? (s.errors.area ?? null) : scheduleProblem(days);
+    setError(problem);
     if (!problem) save.mutate();
   };
-
-  const update = (dow: number, patch: Partial<DayRow>) => setDays((all) => all.map((d) => (d.dow === dow ? { ...d, ...patch } : d)));
 
   if (data.isLoading || !data.data) return <ListSkeleton rows={4} />;
 
@@ -133,34 +137,7 @@ export function SetupForm({ mode }: { mode: 'first' | 'edit' }) {
           <p className="font-bold">{s.schedule}</p>
           <p className="text-sm text-muted">{s.scheduleHint}</p>
         </div>
-        <ul className="space-y-2" data-testid="setup-days">
-          {days.map((d) => (
-            <li key={d.dow} className={cn('rounded-lg border p-3', d.on ? 'border-brand-ink/40 bg-surface' : 'border-border')}>
-              <label className="flex min-h-touch items-center gap-3 font-semibold">
-                <input
-                  type="checkbox"
-                  className="h-5 w-5 accent-[var(--brand-ink)]"
-                  checked={d.on}
-                  onChange={(e) => update(d.dow, { on: e.target.checked })}
-                  data-testid={`day-${d.dow}`}
-                />
-                {t.days[d.dow]}
-              </label>
-              {d.on ? (
-                <div className="mt-2 grid grid-cols-2 gap-3">
-                  <label className="text-sm">
-                    <span className="mb-1 block text-muted">{s.outbound}</span>
-                    <Input type="time" step={300} value={d.outbound} onChange={(e) => update(d.dow, { outbound: e.target.value })} data-testid={`out-${d.dow}`} />
-                  </label>
-                  <label className="text-sm">
-                    <span className="mb-1 block text-muted">{s.return}</span>
-                    <Input type="time" step={300} value={d.ret} onChange={(e) => update(d.dow, { ret: e.target.value })} data-testid={`ret-${d.dow}`} />
-                  </label>
-                </div>
-              ) : null}
-            </li>
-          ))}
-        </ul>
+        <DaysEditor days={days} onChange={setDays} />
         <p className="text-xs text-muted">{s.workDaysNote}</p>
       </Card>
 
@@ -170,7 +147,7 @@ export function SetupForm({ mode }: { mode: 'first' | 'edit' }) {
         </p>
       ) : null}
       <Button type="submit" variant="primary" size="lg" className="w-full" disabled={save.isPending} data-testid="setup-save">
-        {save.isPending ? t.common.saving : mode === 'first' ? s.save : s.saveEdit}
+        {save.isPending ? t.common.saving : s.save}
       </Button>
     </form>
   );
@@ -186,19 +163,61 @@ export function SetupPage() {
           <h1 className="text-2xl font-extrabold text-brand-ink">{t.setup.title}</h1>
           <p className="text-sm text-muted">{t.setup.intro}</p>
         </div>
-        <SetupForm mode="first" />
+        <SetupForm />
         <CreditFooter />
       </div>
     </main>
   );
 }
 
-/** The same form, editable later from «حسابي». */
-export function EditSchedulePage() {
+/** Ticks and outbound/return times for each weekday; one line per time box on phones. */
+export function DaysEditor({ days, onChange }: { days: DayRow[]; onChange: (days: DayRow[]) => void }) {
+  const s = t.setup;
+  const update = (dow: number, patch: Partial<DayRow>) => onChange(days.map((d) => (d.dow === dow ? { ...d, ...patch } : d)));
   return (
-    <div>
-      <PageHeader title={t.setup.editTitle} />
-      <SetupForm mode="edit" />
-    </div>
+    <ul className="space-y-2" data-testid="setup-days">
+      {days.map((d) => (
+        <li key={d.dow} className={cn('rounded-lg border p-3', d.on ? 'border-brand-ink/40 bg-surface' : 'border-border')}>
+          <label className="flex min-h-touch items-center gap-3 font-semibold">
+            <input
+              type="checkbox"
+              className="h-5 w-5 accent-[var(--brand-ink)]"
+              checked={d.on}
+              onChange={(e) => update(d.dow, { on: e.target.checked })}
+              data-testid={`day-${d.dow}`}
+            />
+            {t.days[d.dow]}
+          </label>
+          {d.on ? (
+            <div className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-2 sm:gap-3">
+              <label className="flex min-w-0 items-center gap-3 text-sm">
+                <span className="w-24 shrink-0 text-muted">{s.outbound}</span>
+                <Input
+                  type="time"
+                  step={300}
+                  dir="ltr"
+                  className="min-w-0 flex-1 appearance-none text-center"
+                  value={d.outbound}
+                  onChange={(e) => update(d.dow, { outbound: e.target.value })}
+                  data-testid={`out-${d.dow}`}
+                />
+              </label>
+              <label className="flex min-w-0 items-center gap-3 text-sm">
+                <span className="w-24 shrink-0 text-muted">{s.return}</span>
+                <Input
+                  type="time"
+                  step={300}
+                  dir="ltr"
+                  className="min-w-0 flex-1 appearance-none text-center"
+                  value={d.ret}
+                  onChange={(e) => update(d.dow, { ret: e.target.value })}
+                  data-testid={`ret-${d.dow}`}
+                />
+              </label>
+            </div>
+          ) : null}
+        </li>
+      ))}
+    </ul>
   );
 }

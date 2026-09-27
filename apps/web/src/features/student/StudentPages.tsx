@@ -591,12 +591,6 @@ export function AccountPage() {
               <p className="mt-3 text-xs text-muted">{t.student.readOnlyNote}</p>
             </Card>
             <PushCard />
-            <Button asChild size="lg" variant="secondary" className="w-full">
-              <Link to="/schedule">
-                <CalendarClock className="h-5 w-5" aria-hidden />
-                {t.nav.mySchedule}
-              </Link>
-            </Button>
             <div className="grid gap-2 sm:grid-cols-2">
               <Button asChild size="lg">
                 <Link to="/password">

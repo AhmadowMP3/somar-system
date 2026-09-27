@@ -5,7 +5,7 @@ import { PushGate } from '@/components/PushGate';
 import { Button } from '@/components/ui/primitives';
 import { ErrorState, ListSkeleton } from '@/components/ui/states';
 import { ChangePasswordPage, LoginPage, PhotoUploadPage } from '@/features/auth/AuthPages';
-import { EditSchedulePage, SetupPage } from '@/features/student/SetupPage';
+import { SetupPage } from '@/features/student/SetupPage';
 import { t } from '@/i18n/ar';
 import { useAuth } from './auth';
 import { AdminLayout, ScanLayout, StudentLayout } from './layouts';
@@ -148,7 +148,6 @@ export const router = createBrowserRouter([
               { path: '/routes', element: <Page><StudentRoutesPage /></Page> },
               { path: '/notifications', element: <Page><StudentNotificationsPage /></Page> },
               { path: '/account', element: <Page><AccountPage /></Page> },
-              { path: '/schedule', element: <EditSchedulePage /> },
             ],
           },
         ],

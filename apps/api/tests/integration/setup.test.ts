@@ -42,10 +42,26 @@ describe('first-login setup and schedule statistics', () => {
     expect(data).toMatchObject({ area_primary_id: area, residence_text: 'قرب الجامع', work_days: [6, 7] });
     expect(data?.setup_completed_at).toBeTruthy();
 
-    // re-saving replaces the schedule
-    await asA.rpc('save_my_setup', { p_area_id: area, p_residence: '', p_schedule: [{ dow: 6, outbound: '08:00', return: '13:00' }] });
+    // the student cannot change it afterwards, not even through the API
+    const again = await asA.rpc('save_my_setup', { p_area_id: area, p_residence: '', p_schedule: [{ dow: 6, outbound: '08:00', return: '13:00' }] });
+    expect(again.error?.message).toBe('SETUP_LOCKED');
+    const direct = await asA.from('student_schedule').update({ outbound_time: '06:00' }).eq('student_id', a.id).select();
+    expect(direct.data ?? []).toEqual([]);
+
+    // staff edit replaces the schedule and the work days
+    const byStaff = await gs.rpc('save_student_schedule', { p_student_id: a.id, p_schedule: [{ dow: 6, outbound: '08:00', return: '13:00' }] });
+    expect(byStaff.error).toBeNull();
     const { data: rows } = await asA.from('student_schedule').select('dow, outbound_time, return_time');
     expect(rows).toEqual([{ dow: 6, outbound_time: '08:00:00', return_time: '13:00:00' }]);
+    const { data: after } = await service.from('students').select('work_days').eq('id', a.id).single();
+    expect(after?.work_days).toEqual([6]);
+
+    // staff of another university and students cannot use the staff editor
+    const outsider = (await createStaff(other, 'university_supervisor')).client;
+    const foreign = await outsider.rpc('save_student_schedule', { p_student_id: a.id, p_schedule: [{ dow: 1, outbound: '08:00', return: '13:00' }] });
+    expect(foreign.error?.message).toBe('FORBIDDEN');
+    const self = await asA.rpc('save_student_schedule', { p_student_id: a.id, p_schedule: [{ dow: 1, outbound: '08:00', return: '13:00' }] });
+    expect(self.error?.message).toBe('FORBIDDEN');
   });
 
   it('rejects invalid input and hides one student\'s schedule from another', async () => {

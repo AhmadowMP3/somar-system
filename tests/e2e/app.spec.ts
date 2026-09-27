@@ -87,6 +87,12 @@ test('1. student first login → forced password change → sign-out → login �
   await expect(page).toHaveURL(/\/setup$/);
   await page.getByTestId('setup-area-search').fill('رجاء');
   await page.getByTestId('setup-area-options').getByText('الرجاء', { exact: true }).click();
+  // the list closes after a choice and the field shows the chosen area
+  await expect(page.getByTestId('setup-area-options')).toHaveCount(0);
+  await expect(page.getByTestId('setup-area-search')).toHaveValue('الرجاء');
+  // nothing overflows sideways on a narrow phone
+  await page.setViewportSize({ width: 360, height: 740 });
+  expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBeLessThanOrEqual(0);
   for (const dow of [1, 2, 3, 4, 5, 7]) await page.getByTestId(`day-${dow}`).uncheck();
   await page.getByTestId('day-6').check();
   await page.getByTestId('out-6').fill('07:30');
@@ -237,7 +243,7 @@ test('7. no English text is visible on the main screens of every role', async ({
 
   await login(page, st.transportNumber, STAFF_PASSWORD);
   await expect(page).toHaveURL(/\/$/);
-  await visit(['/', '/trips', '/packages', '/routes', '/notifications', '/account', '/password', '/schedule']);
+  await visit(['/', '/trips', '/packages', '/routes', '/notifications', '/account', '/password']);
   await page.context().clearCookies();
   await page.evaluate(() => localStorage.clear());
 
@@ -354,4 +360,33 @@ test('11. one tap on «تنزيل التطبيق» opens the browser install dia
   await page.getByTestId('install-app').click();
   await expect.poll(() => page.evaluate(() => (window as unknown as { __prompted?: boolean }).__prompted)).toBe(true);
   await expect(page.getByTestId('install-app')).toHaveCount(0);
+});
+
+test('12. the weekly schedule is edited only by the admin; the student has no way to change it', async ({ page }) => {
+  const st = await createE2EStudent(uni, { subscribe: true, photo: true, ready: true });
+  await login(page, st.transportNumber, STAFF_PASSWORD);
+  await expect(page).toHaveURL(/\/$/);
+  await page.goto('/account');
+  await expect(page.getByRole('link', { name: 'مكان السكن وجدول الدوام' })).toHaveCount(0);
+  await page.goto('/schedule');
+  await expect(page.getByText('الصفحة غير موجودة')).toBeVisible();
+
+  await page.context().clearCookies();
+  await page.evaluate(() => localStorage.clear());
+  await login(page, ADMIN_CODE, ADMIN_PASSWORD);
+  await expect(page).toHaveURL(/\/admin$/);
+  await pickUniversity(page, uni.id);
+  await page.goto(`/admin/students/${st.id}`);
+  await page.getByTestId('edit-schedule').click();
+  for (const dow of [1, 2, 3, 4, 5, 6, 7]) await page.getByTestId(`day-${dow}`).setChecked(dow === 2);
+  await page.getByTestId('out-2').fill('09:00');
+  await page.getByTestId('ret-2').fill('08:00');
+  await page.getByTestId('schedule-save').click();
+  await expect(page.getByRole('alert').filter({ hasText: 'وقت العودة يجب أن يكون بعد وقت الذهاب' })).toBeVisible();
+  await page.getByTestId('ret-2').fill('15:30');
+  await page.getByTestId('schedule-save').click();
+  const card = page.getByTestId('student-schedule');
+  await expect(card.getByRole('listitem')).toHaveCount(1);
+  await expect(card).toContainText('الثلاثاء');
+  await expect(card).toContainText('15:30');
 });
