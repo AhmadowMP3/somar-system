@@ -25,7 +25,7 @@ import {
 } from 'lucide-react';
 import { useState, type ReactNode } from 'react';
 import { NavLink, Outlet, useNavigate } from 'react-router-dom';
-import { CreditFooter, InstallPrompt, Logo, NotificationBell, OfflineBanner, UniversityPicker } from '@/components/common';
+import { CreditFooter, InstallButton, Logo, NotificationBell, OfflineBanner, UniversityPicker } from '@/components/common';
 import { Button } from '@/components/ui/primitives';
 import { t } from '@/i18n/ar';
 import { cn } from '@/lib/utils';
@@ -85,10 +85,12 @@ export function StudentLayout() {
       <OfflineBanner />
       <TopBar>
         <Logo />
-        <NotificationBell to="/notifications" />
+        <div className="flex items-center gap-2">
+          <InstallButton />
+          <NotificationBell to="/notifications" />
+        </div>
       </TopBar>
       <main className="mx-auto max-w-2xl px-4 py-4">
-        <InstallPrompt />
         <Outlet />
         <CreditFooter />
       </main>
@@ -117,6 +119,7 @@ export function ScanLayout() {
       <OfflineBanner />
       <TopBar>
         <Logo />
+        <InstallButton className="ms-auto" />
         <Button
           variant="ghost"
           size="sm"
@@ -130,7 +133,6 @@ export function ScanLayout() {
         </Button>
       </TopBar>
       <main className="mx-auto max-w-2xl px-4 py-4">
-        <InstallPrompt />
         <Outlet />
         <CreditFooter />
       </main>
@@ -204,6 +206,7 @@ export function AdminLayout() {
           </Button>
           <Logo className="h-8" />
           <div className="ms-auto flex items-center gap-2">
+            <InstallButton />
             <UniversityPicker className="hidden sm:block" />
             <NotificationBell to="/admin/notifications" />
             <span className="hidden text-sm text-muted md:inline">

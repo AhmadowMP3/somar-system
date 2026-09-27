@@ -4,7 +4,7 @@ import { useEffect, useId, useRef, useState, type FormEvent } from 'react';
 import { Navigate, useLocation, useNavigate } from 'react-router-dom';
 import { checkPassword } from '@somar/shared';
 import { useAuth } from '@/app/auth';
-import { CreditFooter, Logo } from '@/components/common';
+import { CreditFooter, InstallButton, Logo } from '@/components/common';
 import { Button, Card, Field, Input } from '@/components/ui/primitives';
 import { t } from '@/i18n/ar';
 import { api, ApiClientError } from '@/lib/api';
@@ -24,6 +24,9 @@ function AuthShell({ title, subtitle, children }: { title: string; subtitle?: st
           {subtitle ? <p className="text-sm text-muted">{subtitle}</p> : null}
         </div>
         <Card className="p-5">{children}</Card>
+        <div className="mt-4">
+          <InstallButton full />
+        </div>
         <CreditFooter />
       </div>
     </main>

@@ -1,12 +1,13 @@
 import { useQuery } from '@tanstack/react-query';
-import { Bell, Download, Share, WifiOff, X } from 'lucide-react';
+import { Bell, Download, Share, WifiOff } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { t } from '@/i18n/ar';
 import { useAuth, useScope } from '@/app/auth';
-import { isIos, isStandalone, safeStorage } from '@/lib/pwa';
+import { getInstallPrompt, isIos, isStandalone, promptInstall, subscribeInstall } from '@/lib/pwa';
 import { supabase } from '@/lib/supabase';
 import { cn } from '@/lib/utils';
+import { Dialog } from './ui/overlay';
 import { Button, Select } from './ui/primitives';
 
 export function Logo({ className }: { className?: string }) {
@@ -81,78 +82,49 @@ export function NotificationBell({ to }: { to: string }) {
   );
 }
 
-type BeforeInstallPromptEvent = Event & { prompt: () => Promise<void>; userChoice: Promise<{ outcome: string }> };
-const storage = safeStorage();
-
-/** Android/desktop install prompt + one-time iOS "add to home screen" hint. */
-export function InstallPrompt() {
-  const [deferred, setDeferred] = useState<BeforeInstallPromptEvent | null>(null);
-  const [dismissed, setDismissed] = useState(() => storage.get('somar.install.dismissed') === '1');
-  const [iosDismissed, setIosDismissed] = useState(() => storage.get('somar.ios.hint') === '1');
-
-  useEffect(() => {
-    const handler = (e: Event) => {
-      e.preventDefault();
-      setDeferred(e as BeforeInstallPromptEvent);
-    };
-    window.addEventListener('beforeinstallprompt', handler);
-    return () => window.removeEventListener('beforeinstallprompt', handler);
-  }, []);
-
+/** Current install possibility: native prompt (Android/desktop Chromium), iOS manual steps, or nothing. */
+export function useInstallAvailability(): 'prompt' | 'ios' | null {
+  const [, force] = useState(0);
+  useEffect(() => subscribeInstall(() => force((n) => n + 1)), []);
   if (isStandalone()) return null;
+  if (getInstallPrompt()) return 'prompt';
+  if (isIos()) return 'ios';
+  return null;
+}
 
-  if (isIos() && !iosDismissed) {
-    return (
-      <div className="mb-4 flex items-start gap-3 rounded-xl border border-border bg-surface p-3 text-sm">
-        <Share className="mt-0.5 h-5 w-5 shrink-0 text-brand-ink" aria-hidden />
-        <div className="flex-1">
-          <p className="font-bold">{t.student.iosHintTitle}</p>
-          <p className="mt-1 text-muted">{t.student.iosHintBody}</p>
-        </div>
-        <Button
-          variant="ghost"
-          size="icon"
-          aria-label={t.common.close}
-          onClick={() => {
-            storage.set('somar.ios.hint', '1');
-            setIosDismissed(true);
-          }}
-        >
-          <X className="h-4 w-4" />
-        </Button>
-      </div>
-    );
-  }
-
-  if (!deferred || dismissed) return null;
+export function IosInstallSteps() {
   return (
-    <div className="mb-4 flex items-center gap-3 rounded-xl border border-border bg-surface p-3 text-sm">
-      <Download className="h-5 w-5 shrink-0 text-brand-ink" aria-hidden />
-      <div className="flex-1">
-        <p className="font-bold">{t.student.installTitle}</p>
-        <p className="text-muted">{t.student.installBody}</p>
-      </div>
+    <ol className="list-decimal space-y-2 ps-5 text-sm leading-7" data-testid="ios-install-steps">
+      <li>
+        {t.install.iosStep1} <Share className="inline h-4 w-4 text-brand-ink" aria-hidden />
+      </li>
+      <li>{t.install.iosStep2}</li>
+      <li>{t.install.iosStep3}</li>
+    </ol>
+  );
+}
+
+/** One-tap install: opens the native install dialog, or the iPhone steps where no dialog exists. */
+export function InstallButton({ className, full }: { className?: string; full?: boolean }) {
+  const mode = useInstallAvailability();
+  const [iosOpen, setIosOpen] = useState(false);
+  if (!mode) return null;
+  return (
+    <>
       <Button
-        variant="secondary"
-        size="sm"
-        onClick={async () => {
-          await deferred.prompt();
-          setDeferred(null);
-        }}
+        size={full ? 'lg' : 'sm'}
+        variant={full ? 'primary' : 'outline'}
+        className={cn(full && 'w-full', className)}
+        onClick={() => (mode === 'prompt' ? void promptInstall() : setIosOpen(true))}
+        data-testid="install-app"
       >
-        {t.student.install}
+        <Download className="h-4 w-4" aria-hidden />
+        {t.install.button}
       </Button>
-      <Button
-        variant="ghost"
-        size="sm"
-        onClick={() => {
-          storage.set('somar.install.dismissed', '1');
-          setDismissed(true);
-        }}
-      >
-        {t.student.later}
-      </Button>
-    </div>
+      <Dialog open={iosOpen} onOpenChange={setIosOpen} title={t.install.iosTitle} description={t.install.iosIntro}>
+        <IosInstallSteps />
+      </Dialog>
+    </>
   );
 }
 

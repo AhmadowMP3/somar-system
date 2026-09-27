@@ -1,6 +1,7 @@
 import { lazy, Suspense, type ReactNode } from 'react';
 import { createBrowserRouter, Link, Navigate, Outlet, useLocation } from 'react-router-dom';
 import type { Role } from '@somar/shared';
+import { PushGate } from '@/components/PushGate';
 import { Button } from '@/components/ui/primitives';
 import { ErrorState, ListSkeleton } from '@/components/ui/states';
 import { ChangePasswordPage, LoginPage, PhotoUploadPage } from '@/features/auth/AuthPages';
@@ -52,7 +53,7 @@ function FullScreenLoading() {
   );
 }
 
-/** Session → profile → forced password change → forced photo upload, in that order. */
+/** Session → profile → forced password change → forced photo upload → setup → mandatory notifications, in that order. */
 function RequireAuth() {
   const { session, ready, me, meLoading, meError, refreshMe, signOut } = useAuth();
   const location = useLocation();
@@ -89,7 +90,12 @@ function RequireAuth() {
   ) {
     return <Navigate to="/setup" replace />;
   }
-  return <Outlet />;
+  if (['/password', '/photo', '/setup'].includes(location.pathname)) return <Outlet />;
+  return (
+    <PushGate>
+      <Outlet />
+    </PushGate>
+  );
 }
 
 function RequireRole({ roles, student }: { roles: Role[]; student?: boolean }) {

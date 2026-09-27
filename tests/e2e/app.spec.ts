@@ -17,6 +17,41 @@ test.beforeAll(async () => {
   uni = await createE2EUniversity();
 });
 
+/**
+ * Service workers are blocked in these runs, so web push is simulated: by default the device
+ * already has a subscription (every user must have one to get past the mandatory gate).
+ * Setting `window.__E2E_PUSH_OFF` before load starts the device without one.
+ */
+function fakePush() {
+  const w = window as unknown as { __E2E_PUSH_OFF?: boolean };
+  let subscribed: boolean | null = null;
+  const on = () => subscribed ?? !w.__E2E_PUSH_OFF;
+  const sub = {
+    endpoint: 'https://push.e2e.invalid/device',
+    toJSON: () => ({ endpoint: 'https://push.e2e.invalid/device', keys: { p256dh: 'e2e', auth: 'e2e' } }),
+    unsubscribe: async () => true,
+  };
+  const pushManager = {
+    getSubscription: async () => (on() ? sub : null),
+    subscribe: async () => {
+      subscribed = true;
+      return sub;
+    },
+  };
+  const reg = { scope: '/', pushManager };
+  const sw = navigator.serviceWorker as unknown as Record<string, unknown>;
+  Object.defineProperty(sw, 'ready', { get: () => Promise.resolve(reg) });
+  sw.getRegistration = async () => reg;
+  sw.register = async () => reg;
+  Object.defineProperty(Notification, 'permission', { get: () => (on() ? 'granted' : 'default') });
+  Notification.requestPermission = async () => 'granted';
+}
+
+test.beforeEach(async ({ context }) => {
+  await context.addInitScript(fakePush);
+  await context.route('**/api/push/subscribe', (route) => route.fulfill({ json: { ok: true, enabled: true } }));
+});
+
 async function login(page: Page, code: string, password: string) {
   await page.goto('/login');
   await page.getByLabel('رقم النقل (أو رقم المشرف)').fill(code);
@@ -287,4 +322,36 @@ test('9. adding a university is locked with an upgrade message; the credit foote
   await page.getByTestId('add-university-locked').click();
   await expect(page.getByTestId('locked-message')).toHaveText('رقّي باقتك مع أحمد سباغ لتفتحلك');
   await expect(page.getByLabel('اسم الجامعة')).toHaveCount(0);
+});
+
+test('10. notifications are mandatory: the app stays behind the gate until they are enabled', async ({ page }) => {
+  const st = await createE2EStudent(uni, { subscribe: true, photo: true, ready: true });
+  await page.addInitScript(() => {
+    (window as unknown as { __E2E_PUSH_OFF?: boolean }).__E2E_PUSH_OFF = true;
+  });
+  await login(page, st.transportNumber, STAFF_PASSWORD);
+  await expect(page.getByTestId('push-gate')).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'فعّل الإشعارات للمتابعة' })).toBeVisible();
+  await page.goto('/trips');
+  await expect(page.getByTestId('push-gate')).toBeVisible();
+  await page.getByTestId('push-enable').click();
+  await expect(page.getByTestId('push-gate')).toHaveCount(0);
+  await expect(page.getByTestId('credit-footer')).toBeVisible();
+});
+
+test('11. one tap on «تنزيل التطبيق» opens the browser install dialog', async ({ page }) => {
+  await page.goto('/login');
+  await expect(page.getByTestId('install-app')).toHaveCount(0);
+  await page.evaluate(() => {
+    const e = Object.assign(new Event('beforeinstallprompt', { cancelable: true }), {
+      prompt: async () => {
+        (window as unknown as { __prompted?: boolean }).__prompted = true;
+      },
+      userChoice: Promise.resolve({ outcome: 'accepted' }),
+    });
+    window.dispatchEvent(e);
+  });
+  await page.getByTestId('install-app').click();
+  await expect.poll(() => page.evaluate(() => (window as unknown as { __prompted?: boolean }).__prompted)).toBe(true);
+  await expect(page.getByTestId('install-app')).toHaveCount(0);
 });
