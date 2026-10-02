@@ -1,6 +1,7 @@
 import { arShared } from './i18n/ar.js';
 import {
   checkFullName,
+  normalizeNationalId,
   normalizePhone,
   normalizeStudentNo,
   parseShiftStart,
@@ -9,19 +10,24 @@ import {
 } from './normalize.js';
 import { foldArabic, normalizeText, similarity } from './text.js';
 
+/**
+ * Only name, university number and national number are required (owner's request). Anything else the
+ * sheet leaves out, the student answers in the first-login questionnaire.
+ */
 export const IMPORT_FIELDS = [
-  { key: 'timestamp', header: 'Timestamp', required: true },
+  { key: 'timestamp', header: 'Timestamp', required: false },
   { key: 'full_name', header: 'الاسم الثلاثي', required: true },
   { key: 'university_student_no', header: 'الرقم جامعي', required: true },
+  { key: 'national_id', header: 'الرقم الوطني', required: true },
   { key: 'card_image', header: 'صورة عن البطاقة الجامعية', required: false },
-  { key: 'phone', header: 'رقم الهاتف المستخدم في الوتس ضمن مجموعة', required: true },
-  { key: 'college', header: 'الكلية التابع اليها', required: true },
+  { key: 'phone', header: 'رقم الهاتف المستخدم في الوتس ضمن مجموعة', required: false },
+  { key: 'college', header: 'الكلية التابع اليها', required: false },
   { key: 'residence', header: 'مكان السكن', required: false },
-  { key: 'area_primary', header: 'المنطقة القريبة اليك', required: true },
+  { key: 'area_primary', header: 'المنطقة القريبة اليك', required: false },
   { key: 'area_secondary', header: 'المنطقة القريبة اليك 2', required: false },
   { key: 'area_other', header: 'في حال اختيار (أخرى) يرجى كتابة اسم المنقطة القريبة اليك', required: false },
-  { key: 'work_days', header: 'اختر أيام دوامك بالاسبوع', required: true },
-  { key: 'shift_start', header: 'متى يبدأ دوامك الاسبوعي', required: true },
+  { key: 'work_days', header: 'اختر أيام دوامك بالاسبوع', required: false },
+  { key: 'shift_start', header: 'متى يبدأ دوامك الاسبوعي', required: false },
 ] as const;
 
 export type ImportFieldKey = (typeof IMPORT_FIELDS)[number]['key'];
@@ -86,15 +92,18 @@ export type NormalizedImportRow = {
   timestamp: number;
   full_name: string;
   university_student_no: string;
-  phone_e164: string;
-  college_name: string;
+  /** Initial password of a new account. */
+  national_id: string;
+  /** Left empty in the sheet → asked at first login. */
+  phone_e164: string | null;
+  college_name: string | null;
   college_id: string | null;
   residence_text: string | null;
   area_primary_id: string | null;
   area_secondary_id: string | null;
   area_other_text: string | null;
   work_days: number[];
-  shift_start: ShiftStart;
+  shift_start: ShiftStart | null;
 };
 
 export type ImportRowStatus = 'created' | 'updated' | 'duplicate' | 'rejected';
@@ -159,23 +168,44 @@ export function normalizeImportRow(
   const studentNo = normalizeStudentNo(raw.university_student_no);
   if (!studentNo.ok) reasons.push(t.STUDENT_NO_INVALID);
 
-  const phone = normalizePhone(raw.phone);
-  if (!phone.ok) reasons.push(t.PHONE_INVALID);
+  const nid = normalizeNationalId(raw.national_id);
+  if (!nid.ok) reasons.push(nid.reason === 'empty' ? t.NATIONAL_ID_REQUIRED : t.NATIONAL_ID_INVALID);
+  else if (nid.value.length !== 11) warnings.push(t.NATIONAL_ID_LENGTH);
 
-  const collegeName = normalizeText(raw.college);
+  // Optional answers: a bad or empty cell is left empty and asked at first login.
+  let phone: string | null = null;
+  if (normalizeText(raw.phone)) {
+    const p = normalizePhone(raw.phone);
+    if (p.ok) phone = p.value;
+    else warnings.push(t.PHONE_INVALID + t.ASKED_AT_LOGIN);
+  }
+
+  const collegeName = normalizeText(raw.college) || null;
   let collegeId: string | null = null;
-  if (!collegeName) reasons.push(t.COLLEGE_REQUIRED);
-  else {
+  if (collegeName) {
     const c = matchRef(ctx.colleges, collegeName);
     if (c) collegeId = c.id;
     else warnings.push(t.COLLEGE_NEW + collegeName);
   }
 
-  const days = parseWorkDays(raw.work_days);
-  if (!days.ok) reasons.push(days.reason === 'empty' ? t.WORK_DAYS_EMPTY : t.WORK_DAYS_UNKNOWN + (days.token ?? ''));
+  let workDays: number[] = [];
+  if (normalizeText(raw.work_days)) {
+    const days = parseWorkDays(raw.work_days);
+    if (days.ok) workDays = days.value;
+    else warnings.push(t.WORK_DAYS_UNKNOWN + (days.token ?? '') + t.ASKED_AT_LOGIN);
+  }
 
-  const shift = parseShiftStart(raw.shift_start);
-  if (!shift.ok) reasons.push(t.SHIFT_UNKNOWN + normalizeText(raw.shift_start));
+  let shiftStart: ShiftStart | null = null;
+  if (normalizeText(raw.shift_start)) {
+    const shift = parseShiftStart(raw.shift_start);
+    if (shift.ok) shiftStart = shift.value;
+    else warnings.push(t.SHIFT_UNKNOWN + normalizeText(raw.shift_start) + t.ASKED_AT_LOGIN);
+  }
+
+  const missing = [!phone && t.FIELD_PHONE, !collegeName && t.FIELD_COLLEGE, !workDays.length && t.FIELD_DAYS, !shiftStart && t.FIELD_SHIFT]
+    .filter(Boolean)
+    .join('، ');
+  if (missing) warnings.push(t.MISSING_ANSWERS + missing);
 
   const otherKey = foldArabic(OTHER_AREA_LABEL);
   const otherText = normalizeText(raw.area_other) || null;
@@ -208,7 +238,7 @@ export function normalizeImportRow(
     university_student_no: studentNo.ok ? studentNo.value : null,
     warnings,
   };
-  if (reasons.length || !name.ok || !studentNo.ok || !phone.ok || !days.ok || !shift.ok) {
+  if (reasons.length || !name.ok || !studentNo.ok || !nid.ok) {
     return { ...base, status: 'rejected', reasons, data: null };
   }
   return {
@@ -220,15 +250,16 @@ export function normalizeImportRow(
       timestamp: parseTimestampCell(raw.timestamp),
       full_name: name.value,
       university_student_no: studentNo.value,
-      phone_e164: phone.value,
+      national_id: nid.value,
+      phone_e164: phone,
       college_name: collegeName,
       college_id: collegeId,
       residence_text: normalizeText(raw.residence) || null,
       area_primary_id: primaryId,
       area_secondary_id: secondaryId,
       area_other_text: otherParts.length ? otherParts.join(' / ') : null,
-      work_days: days.value,
-      shift_start: shift.value,
+      work_days: workDays,
+      shift_start: shiftStart,
     },
   };
 }

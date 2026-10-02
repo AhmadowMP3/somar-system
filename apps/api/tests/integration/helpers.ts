@@ -130,11 +130,12 @@ export type TestStudent = { id: string; transportNumber: string; profileId: stri
 
 export async function createStudent(
   fx: Fixture,
-  opts: { workDays?: number[]; subscribe?: boolean; startsOn?: string; endsOn?: string; tripsPerWeek?: number } = {},
+  opts: { workDays?: number[]; subscribe?: boolean; startsOn?: string; endsOn?: string; tripsPerWeek?: number; nationalId?: string } = {},
 ): Promise<TestStudent> {
   const data: StudentData = {
     full_name: 'طالب اختبار ثلاثي',
     university_student_no: String(Math.floor(Math.random() * 1e9)),
+    national_id: opts.nationalId ?? null,
     phone_e164: '+963944123456',
     college_id: fx.collegeId,
     residence_text: null,

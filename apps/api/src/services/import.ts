@@ -171,7 +171,7 @@ async function commitRows(
   colleges: RefItem[],
 ): Promise<ImportRowResult[]> {
   const newCollegeNames = [
-    ...new Set(rows.filter((r) => r.data && !r.data.college_id).map((r) => normalizeText(r.data?.college_name))),
+    ...new Set(rows.filter((r) => r.data?.college_name && !r.data.college_id).map((r) => normalizeText(r.data?.college_name))),
   ];
   let allColleges = colleges;
   if (newCollegeNames.length) {
@@ -186,11 +186,13 @@ async function commitRows(
 
   const toStudentData = (r: ImportRowResult): StudentData | null => {
     if (!r.data) return null;
-    const collegeId = r.data.college_id ?? collegeByKey.get(foldArabic(r.data.college_name));
-    if (!collegeId) return null;
+    // no college in the sheet → the student picks it at first login
+    const collegeId = r.data.college_id ?? (r.data.college_name ? collegeByKey.get(foldArabic(r.data.college_name)) : null) ?? null;
+    if (r.data.college_name && !collegeId) return null;
     return {
       full_name: r.data.full_name,
       university_student_no: r.data.university_student_no,
+      national_id: r.data.national_id,
       phone_e164: r.data.phone_e164,
       college_id: collegeId,
       residence_text: r.data.residence_text,

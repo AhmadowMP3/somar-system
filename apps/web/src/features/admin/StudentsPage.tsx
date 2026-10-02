@@ -71,9 +71,10 @@ function StudentsBody({ universityId }: { universityId: string }) {
     queryKey: ['students', universityId, filters, threshold.data],
     queryFn: async () => {
       let q = supabase
-        .from('v_student_balance')
+        .from('v_rider_balance')
         .select('*', { count: 'exact' })
         .eq('university_id', universityId)
+        .eq('kind', 'student')
         .order('transport_number')
         .limit(500);
       if (filters.q) {
@@ -105,7 +106,7 @@ function StudentsBody({ universityId }: { universityId: string }) {
     if (filters.college) return `/admin/cards?college=${filters.college}`;
     const rows = query.data?.rows ?? [];
     if (rows.length && rows.length <= 60) return `/admin/cards?ids=${rows.map((r) => r.student_id).join(',')}`;
-    return `/admin/cards?university=${universityId}`;
+    return `/admin/cards?university=${universityId}&kind=student`;
   }, [filters.package, filters.college, query.data, universityId]);
 
   return (

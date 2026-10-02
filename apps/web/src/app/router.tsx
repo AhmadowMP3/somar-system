@@ -34,6 +34,8 @@ const Admin = {
   Students: lazy(() => import('@/features/admin/StudentsPage')),
   StudentDetail: lazy(() => import('@/features/admin/StudentDetailPage')),
   StudentForm: lazy(() => import('@/features/admin/StudentFormPage')),
+  Members: lazy(() => import('@/features/admin/MembersPage')),
+  MemberForm: lazy(() => import('@/features/admin/MemberFormPage')),
   Import: lazy(() => import('@/features/admin/ImportPage')),
   Supervisors: lazy(() => import('@/features/admin/SupervisorsPage')),
   Scans: lazy(() => import('@/features/admin/ScansPage')),
@@ -55,7 +57,7 @@ function FullScreenLoading() {
   );
 }
 
-/** Session → profile → forced password change → forced photo upload → setup → mandatory notifications, in that order. */
+/** Session → profile → forced password change → setup questionnaire → forced photo upload → mandatory notifications, in that order. */
 function RequireAuth() {
   const { session, ready, me, meLoading, meError, refreshMe, signOut } = useAuth();
   const location = useLocation();
@@ -81,16 +83,17 @@ function RequireAuth() {
   if (me.profile.must_change_password && location.pathname !== '/password') {
     return <Navigate to="/password" replace />;
   }
-  if (!me.profile.must_change_password && me.student && !me.student.photo_path && location.pathname !== '/photo') {
-    return <Navigate to="/photo" replace />;
-  }
+  // right after the password change: answer the missing questions, then the photo
   if (
     !me.profile.must_change_password &&
-    me.student?.photo_path &&
+    me.student &&
     !me.student.setup_completed_at &&
     !['/setup', '/password'].includes(location.pathname)
   ) {
     return <Navigate to="/setup" replace />;
+  }
+  if (!me.profile.must_change_password && me.student?.setup_completed_at && !me.student.photo_path && location.pathname !== '/photo') {
+    return <Navigate to="/photo" replace />;
   }
   if (['/password', '/photo', '/setup'].includes(location.pathname)) return <Outlet />;
   return (
@@ -195,6 +198,15 @@ export const router = createBrowserRouter([
               { path: 'students/new', element: <Allowed perm="students"><Admin.StudentForm /></Allowed> },
               { path: 'students/:id', element: <Allowed perm="students"><Admin.StudentDetail /></Allowed> },
               { path: 'students/:id/edit', element: <Allowed perm="students"><Admin.StudentForm /></Allowed> },
+              ...(['doctor', 'employee'] as const).flatMap((kind) => {
+                const base = kind === 'doctor' ? 'doctors' : 'employees';
+                return [
+                  { path: base, element: <Allowed perm="students"><Admin.Members key={kind} kind={kind} /></Allowed> },
+                  { path: `${base}/new`, element: <Allowed perm="students"><Admin.MemberForm key={kind} kind={kind} /></Allowed> },
+                  { path: `${base}/:id`, element: <Allowed perm="students"><Admin.StudentDetail /></Allowed> },
+                  { path: `${base}/:id/edit`, element: <Allowed perm="students"><Admin.MemberForm kind={kind} /></Allowed> },
+                ];
+              }),
               { path: 'import', element: <Allowed perm="import"><Admin.Import /></Allowed> },
               { path: 'supervisors', element: <Allowed perm="supervisors"><Admin.Supervisors /></Allowed> },
               { path: 'scans', element: <Allowed perm="scans"><Admin.Scans /></Allowed> },

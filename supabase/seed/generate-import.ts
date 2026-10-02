@@ -14,13 +14,15 @@ export const IMPORT_FILE = resolve(dirname(fileURLToPath(import.meta.url)), 'dem
 /** Expected results when importing into a university that has none of these students yet. */
 export const IMPORT_EXPECTED = {
   total: 60,
-  created: 53,
+  created: 54,
   updated: 0,
-  rejected: 4,
+  rejected: 3,
   duplicates: 3,
   needsAreaMapping: 4,
-  /** Rows (sheet row numbers) that must be rejected. */
-  rejectedRows: [6, 22, 23, 40],
+  /** Rows (sheet row numbers) that must be rejected: bad university number, missing / bad national number. */
+  rejectedRows: [6, 41, 42],
+  /** Row whose optional answers are all empty: imported, the student completes them at first login. */
+  incompleteStudentNo: '330042',
   /** Student number whose later-in-file row is OLDER; the earlier (newer) row must win. */
   duplicateNewerFirst: { studentNo: '331102', winningName: 'رهف عادل الأحدث' },
   foreignPhones: ['+966565324644', '+971501234567', '+905321234567', '+96566012345', '+97336001234', '+4915112345678'],
@@ -53,6 +55,7 @@ export function buildRows(): Row[] {
       timestamp: ts(),
       full_name: name(),
       university_student_no: String(seq),
+      national_id: String(20100000000 + seq),
       card_image: `https://drive.google.com/open?id=demo${seq}`,
       phone: `09${r.int(30, 99)}${r.int(100000, 999999)}`,
       college: r.next() < 0.69 ? COLLEGES[0] : r.next() < 0.93 ? COLLEGES[1] : COLLEGES[2],
@@ -89,8 +92,8 @@ export function buildRows(): Row[] {
   rows.push(make({ area_primary: 'أخرى', area_other: 'حي الفرقان' })); // 19: needs mapping
   rows.push(make({ area_primary: 'أخرى', area_other: 'الشعار' })); // 20: needs mapping
   rows.push(make({ area_primary: 'أخرى', area_other: '' })); // 21: other without text
-  rows.push(make({ phone: '123009' })); // 22: invalid phone → rejected
-  rows.push(make({ phone: '099614538e' })); // 23: invalid phone → rejected
+  rows.push(make({ phone: '123009' })); // 22: invalid phone → left empty, asked at first login
+  rows.push(make({ phone: '099614538e' })); // 23: invalid phone → left empty, asked at first login
   rows.push(make({ area_secondary: 'جامع النصر' })); // 24: second area
   rows.push(make({ area_secondary: 'الرجاء' })); // 25: second area
   rows.push(make({ area_primary: 'الصنم', area_secondary: 'أخرى', area_other: 'الحمدانية الجديدة' })); // 26
@@ -112,7 +115,11 @@ export function buildRows(): Row[] {
   // Duplicate pair C with string timestamps: rows 38 / 39
   rows.push(make({ university_student_no: '331103', timestamp: '2025/08/30 09:10:00', full_name: 'حمزة جمال القديم' }));
   rows.push(make({ university_student_no: '331103', timestamp: '2025/08/31 09:10:00', full_name: 'حمزة جمال الأحدث' }));
-  rows.push(make({ shift_start: 'الساعة ٩ صباحا' })); // 40: unknown shift → rejected
+  rows.push(make({ shift_start: 'الساعة ٩ صباحا' })); // 40: unknown shift → left empty, asked at first login
+  rows.push(make({ national_id: '' })); // 41: no national number → rejected
+  rows.push(make({ national_id: '12ab' })); // 42: invalid national number → rejected
+  // 43: only name, university number and national number (student no 330042)
+  rows.push(make({ phone: '', college: '', residence: '', area_primary: '', work_days: '', shift_start: '' }));
   while (rows.length < 60) rows.push(make());
   return rows;
 }

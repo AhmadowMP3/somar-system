@@ -14,34 +14,58 @@ export type StudentData = Pick<
   | 'area_other_text'
   | 'work_days'
   | 'shift_start'
-> & { college_id: string };
+> & { college_id: string | null; national_id?: string | null };
+
+/** A doctor or university employee: no college, number or package; unlimited trips. */
+export type MemberData = {
+  kind: 'doctor' | 'employee';
+  full_name: string;
+  phone_e164: string | null;
+  job_title: string | null;
+  residence_text: string | null;
+  area_primary_id: string | null;
+  work_days: number[];
+  work_hours_text: string | null;
+  notes: string | null;
+};
+
+/** The password a new account starts with (and that an admin reset goes back to). */
+export function initialPassword(data: { national_id?: string | null }, transportNumber: string): string {
+  return data.national_id || transportNumber;
+}
 
 export type ProvisionResult =
   | { ok: true; studentId: string; transportNumber: string; profileId: string }
   | { ok: false; code: 'STUDENT_EXISTS' | 'PROVISION_FAILED'; detail: string };
 
 /**
- * Create auth user → profile → student for one student. Every failure rolls back the auth user
+ * Create auth user → profile → student for one student (or doctor / employee). Every failure rolls back the auth user
  * (no orphans) and gives the transport number back when it is still the latest allocation.
  */
 export async function provisionStudent(
   db: Db,
   cfg: Config,
   universityId: string,
-  data: StudentData,
+  data: StudentData | MemberData,
   actorId: string | null,
 ): Promise<ProvisionResult> {
-  const { data: tn, error: allocErr } = await db.rpc('allocate_transport_number', { p_university_id: universityId });
+  // Doctors and employees have their own series (SHB-D001 / SHB-E001), students the university's.
+  const kind = 'kind' in data ? data.kind : null;
+  const { data: tn, error: allocErr } = kind
+    ? await db.rpc('allocate_member_number', { p_university_id: universityId, p_kind: kind })
+    : await db.rpc('allocate_transport_number', { p_university_id: universityId });
   if (allocErr || typeof tn !== 'string') {
     return { ok: false, code: 'PROVISION_FAILED', detail: allocErr?.message ?? 'allocation failed' };
   }
   const release = async () => {
-    await db.rpc('release_transport_number', { p_university_id: universityId, p_transport_number: tn });
+    if (kind) await db.rpc('release_member_number', { p_university_id: universityId, p_kind: kind, p_transport_number: tn });
+    else await db.rpc('release_transport_number', { p_university_id: universityId, p_transport_number: tn });
   };
 
   const { data: created, error: userErr } = await db.auth.admin.createUser({
     email: loginCodeToEmail(tn, cfg.SUPABASE_STUDENT_EMAIL_DOMAIN),
-    password: tn,
+    // a student's initial password is the national number when known, otherwise the transport number
+    password: initialPassword('national_id' in data ? data : {}, tn),
     email_confirm: true,
     user_metadata: { login_code: tn },
   });

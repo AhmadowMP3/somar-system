@@ -14,7 +14,7 @@ export const APP_TABLES = [
 ];
 const FUNCTIONS = [
   'perform_scan', 'cancel_scan', 'student_week_balance', 'student_dashboard', 'my_scans_today', 'run_daily_jobs',
-  'assign_subscription', 'bulk_adjust_package', 'allocate_transport_number', 'provision_student', 'admin_dashboard',
+  'assign_subscription', 'bulk_adjust_package', 'allocate_transport_number', 'allocate_member_number', 'provision_student', 'admin_dashboard',
   'save_my_setup', 'save_student_schedule', 'schedule_stats', 'duplicate_route',
   'run_recurring_notifications', 'pickup_window', 'choose_my_pickup', 'pickup_stats', 'pickup_days',
   'pickup_return_times', 'pickup_return_stats', 'has_permission', 'staff_can', 'set_staff_permissions', 'delete_stop',

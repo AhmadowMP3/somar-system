@@ -66,7 +66,7 @@ async function pickUniversity(page: Page, id: string) {
   await picker.selectOption(id);
 }
 
-test('1. student first login → forced password change → sign-out → login → forced photo → dashboard', async ({ page }) => {
+test('1. student first login → forced password change → sign-out → login → questionnaire → forced photo → dashboard', async ({ page }) => {
   const st = await createE2EStudent(uni, { subscribe: true });
   await login(page, st.transportNumber, st.transportNumber);
 
@@ -81,25 +81,34 @@ test('1. student first login → forced password change → sign-out → login �
   await expect(page.getByRole('status')).toContainText('يرجى تسجيل الدخول مجدداً');
 
   await login(page, st.transportNumber, newPassword);
+
+  // first-login questionnaire, one question per screen (this student's profile is complete,
+  // so it starts at the area): area → residence → days → each day's times → review
+  await expect(page).toHaveURL(/\/setup$/);
+  await page.setViewportSize({ width: 360, height: 740 });
+  await page.getByTestId('setup-next').click();
+  await expect(page.getByRole('alert')).toBeVisible(); // an answer is required
+  await page.getByTestId('setup-area').selectOption({ label: 'الرجاء' });
+  await page.getByTestId('setup-next').click();
+  await page.getByTestId('setup-residence').fill('قرب الجامع');
+  await page.getByTestId('setup-next').click();
+  for (const dow of [1, 2, 3, 4, 5, 7]) {
+    const day = page.getByTestId(`day-${dow}`);
+    if ((await day.getAttribute('aria-pressed')) === 'true') await day.click();
+  }
+  if ((await page.getByTestId('day-6').getAttribute('aria-pressed')) !== 'true') await page.getByTestId('day-6').click();
+  await page.getByTestId('setup-next').click();
+  await page.getByTestId('out-6').selectOption('07:30');
+  await page.getByTestId('ret-6').selectOption('14:00');
+  // nothing overflows sideways on a narrow phone
+  expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBeLessThanOrEqual(0);
+  await page.getByTestId('setup-next').click();
+  await page.getByTestId('setup-save').click();
+
+  // then the photo
   await expect(page).toHaveURL(/\/photo$/);
   await page.getByTestId('photo-file-input').setInputFiles({ name: 'me.jpg', mimeType: 'image/jpeg', buffer: await jpegFile() });
   await page.getByRole('button', { name: 'تأكيد ورفع الصورة' }).click();
-
-  // first-login setup: area (searchable) + weekly departure/return times
-  await expect(page).toHaveURL(/\/setup$/);
-  await page.getByTestId('setup-area-search').fill('رجاء');
-  await page.getByTestId('setup-area-options').getByText('الرجاء', { exact: true }).click();
-  // the list closes after a choice and the field shows the chosen area
-  await expect(page.getByTestId('setup-area-options')).toHaveCount(0);
-  await expect(page.getByTestId('setup-area-search')).toHaveValue('الرجاء');
-  // nothing overflows sideways on a narrow phone
-  await page.setViewportSize({ width: 360, height: 740 });
-  expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBeLessThanOrEqual(0);
-  for (const dow of [1, 2, 3, 4, 5, 7]) await page.getByTestId(`day-${dow}`).uncheck();
-  await page.getByTestId('day-6').check();
-  await page.getByTestId('out-6').fill('07:30');
-  await page.getByTestId('ret-6').fill('14:00');
-  await page.getByTestId('setup-save').click();
 
   await expect(page).toHaveURL(/\/$/);
   await expect(page.getByTestId('transport-number')).toHaveText(st.transportNumber);
@@ -561,7 +570,7 @@ test('16. supervisor permissions: chosen in a popup when created, edited later, 
 
   // the admin adds «الطلاب» in the popup; the open session picks it up without a reload
   await page.locator('li').filter({ hasText: code }).getByTestId('edit-permissions').click();
-  await page.getByRole('dialog').getByText('الطلاب وطباعة البطاقات', { exact: true }).click();
+  await page.getByRole('dialog').getByText('الطلاب والدكاترة والموظفون وطباعة البطاقات', { exact: true }).click();
   await page.getByRole('dialog').getByTestId('permissions-save').click();
   await expect(page.getByText('تم حفظ الصلاحيات')).toBeVisible();
   await sup.getByRole('button', { name: 'القائمة' }).click();

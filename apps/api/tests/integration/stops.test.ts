@@ -107,3 +107,23 @@ describe('duplicate_route', () => {
     expect(byOther.error?.message).toBe('FORBIDDEN');
   });
 });
+
+describe('deleting a route', () => {
+  it('removes the route with its stop order; library stops stay; students cannot delete', async () => {
+    const stop = await gs.from('stops').insert({ university_id: fx.universityId, name: 'نقطة خط محذوف' }).select('id').single();
+    const route = await gs.from('routes').insert({ university_id: fx.universityId, name: 'خط للحذف' }).select('id').single();
+    const routeId = route.data?.id as string;
+    await gs.from('route_stops').insert({ route_id: routeId, seq: 1, stop_id: stop.data?.id });
+
+    const byStudent = await student.from('routes').delete().eq('id', routeId).select('id');
+    expect(byStudent.data ?? []).toEqual([]);
+
+    const del = await gs.from('routes').delete().eq('id', routeId).select('id');
+    expect(del.error).toBeNull();
+    expect(del.data).toEqual([{ id: routeId }]);
+    const { count: left } = await service.from('route_stops').select('id', { count: 'exact', head: true }).eq('route_id', routeId);
+    expect(left).toBe(0);
+    const { data: kept } = await service.from('stops').select('id').eq('id', stop.data?.id as string);
+    expect(kept?.length).toBe(1);
+  });
+});

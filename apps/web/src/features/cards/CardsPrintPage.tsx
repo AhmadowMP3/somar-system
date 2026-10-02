@@ -20,7 +20,7 @@ type CardData = {
 async function loadCards(params: URLSearchParams): Promise<CardData[]> {
   let q = supabase
     .from('students')
-    .select('id, full_name, transport_number, qr_token, photo_path, colleges(name)')
+    .select('id, full_name, kind, job_title, transport_number, qr_token, photo_path, colleges(name)')
     .eq('is_active', true)
     .order('transport_number');
   const ids = params.get('ids');
@@ -36,10 +36,14 @@ async function loadCards(params: URLSearchParams): Promise<CardData[]> {
   } else if (college) q = q.eq('college_id', college);
   else if (university) q = q.eq('university_id', university);
   else return [];
+  const kind = params.get('kind');
+  if (kind && !ids) q = q.eq('kind', kind);
 
   const students = unwrap(await q) as unknown as {
     id: string;
     full_name: string;
+    kind: string;
+    job_title: string | null;
     transport_number: string;
     qr_token: string;
     photo_path: string | null;
@@ -53,7 +57,8 @@ async function loadCards(params: URLSearchParams): Promise<CardData[]> {
       full_name: s.full_name,
       transport_number: s.transport_number,
       qr_token: s.qr_token,
-      college: s.colleges?.name ?? '',
+      // the card's college line shows a doctor's / employee's job title instead
+      college: s.colleges?.name ?? s.job_title ?? t.student.kind[s.kind] ?? '',
       photo: await toDataUri(await signedUrl(PHOTO_BUCKET, s.photo_path)),
     })),
   );

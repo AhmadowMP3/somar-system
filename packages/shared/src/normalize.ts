@@ -16,6 +16,17 @@ export function normalizeStudentNo(raw: unknown): Result<string> {
   return { ok: true, value: expanded };
 }
 
+/**
+ * National number → digits only (Arabic digits and Excel number cells repaired). It is the account's
+ * initial password, so it must be 6–20 digits (GoTrue's minimum is 6); Syrian numbers have 11.
+ */
+export function normalizeNationalId(raw: unknown): Result<string> {
+  const no = normalizeStudentNo(raw);
+  if (!no.ok) return no;
+  if (no.value.length < 6 || no.value.length > 20) return { ok: false, reason: 'invalid' };
+  return no;
+}
+
 const SY_MOBILE_NATIONAL = /^9\d{8}$/;
 
 /** Normalize any phone input to E.164; accepts valid international numbers. */

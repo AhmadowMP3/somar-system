@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useId, useState, type FormEvent } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { checkFullName, normalizePhone, normalizeStudentNo, SHIFT_STARTS } from '@somar/shared';
+import { checkFullName, normalizeNationalId, normalizePhone, normalizeStudentNo, SHIFT_STARTS } from '@somar/shared';
 import { useToast } from '@/components/ui/overlay';
 import { Button, Card, Field, Input, Select, Textarea } from '@/components/ui/primitives';
 import { PageHeader, QueryState } from '@/components/ui/states';
@@ -14,6 +14,7 @@ import { DayToggles, useAreas, useColleges, WithUniversity } from './common';
 type FormState = {
   full_name: string;
   university_student_no: string;
+  national_id: string;
   phone: string;
   college_id: string;
   residence_text: string;
@@ -27,6 +28,7 @@ type FormState = {
 const EMPTY: FormState = {
   full_name: '',
   university_student_no: '',
+  national_id: '',
   phone: '',
   college_id: '',
   residence_text: '',
@@ -46,7 +48,7 @@ export default function StudentFormPage() {
       unwrap(
         await supabase
           .from('students')
-          .select('id, university_id, full_name, university_student_no, phone_e164, college_id, residence_text, area_primary_id, area_secondary_id, area_other_text, work_days, shift_start')
+          .select('id, university_id, full_name, university_student_no, national_id, phone_e164, college_id, residence_text, area_primary_id, area_secondary_id, area_other_text, work_days, shift_start')
           .eq('id', id as string)
           .single(),
       ) as {
@@ -54,14 +56,15 @@ export default function StudentFormPage() {
         university_id: string;
         full_name: string;
         university_student_no: string;
-        phone_e164: string;
-        college_id: string;
+        national_id: string | null;
+        phone_e164: string | null;
+        college_id: string | null;
         residence_text: string | null;
         area_primary_id: string | null;
         area_secondary_id: string | null;
         area_other_text: string | null;
         work_days: number[];
-        shift_start: string;
+        shift_start: string | null;
       },
   });
   if (!id) return <WithUniversity>{(universityId) => <StudentForm universityId={universityId} initial={EMPTY} />}</WithUniversity>;
@@ -74,14 +77,15 @@ export default function StudentFormPage() {
           initial={{
             full_name: s.full_name,
             university_student_no: s.university_student_no,
-            phone: s.phone_e164,
-            college_id: s.college_id,
+            national_id: s.national_id ?? '',
+            phone: s.phone_e164 ?? '',
+            college_id: s.college_id ?? '',
             residence_text: s.residence_text ?? '',
             area_primary_id: s.area_primary_id ?? '',
             area_secondary_id: s.area_secondary_id ?? '',
             area_other_text: s.area_other_text ?? '',
             work_days: s.work_days,
-            shift_start: s.shift_start.slice(0, 5),
+            shift_start: s.shift_start?.slice(0, 5) ?? '08:00',
           }}
         />
       )}
@@ -101,6 +105,7 @@ function StudentForm({ universityId, studentId, initial }: { universityId: strin
   const ids = {
     name: useId(),
     no: useId(),
+    nid: useId(),
     phone: useId(),
     college: useId(),
     residence: useId(),
@@ -113,9 +118,11 @@ function StudentForm({ universityId, studentId, initial }: { universityId: strin
   const name = checkFullName(form.full_name);
   const no = normalizeStudentNo(form.university_student_no);
   const phone = normalizePhone(form.phone);
+  const nid = form.national_id.trim() ? normalizeNationalId(form.national_id) : null;
   const errors = {
     full_name: !name.ok ? (name.reason === 'empty' ? t.shared.import.NAME_REQUIRED : t.shared.import.NAME_TOO_SHORT) : undefined,
     no: !no.ok ? t.shared.import.STUDENT_NO_INVALID : undefined,
+    nid: nid && !nid.ok ? t.shared.import.NATIONAL_ID_INVALID : undefined,
     phone: !phone.ok ? t.shared.import.PHONE_INVALID : undefined,
     college: !form.college_id ? t.shared.import.COLLEGE_REQUIRED : undefined,
     days: !form.work_days.length ? t.shared.import.WORK_DAYS_EMPTY : undefined,
@@ -129,6 +136,7 @@ function StudentForm({ universityId, studentId, initial }: { universityId: strin
         college_id: form.college_id,
         full_name: form.full_name,
         university_student_no: form.university_student_no,
+        national_id: form.national_id.trim() || null,
         phone: form.phone,
         residence_text: form.residence_text || null,
         area_primary_id: form.area_primary_id || null,
@@ -139,7 +147,7 @@ function StudentForm({ universityId, studentId, initial }: { universityId: strin
       };
       if (!studentId) {
         const res = await api.post<{ student_id: string; transport_number: string }>('/students', payload);
-        return { id: res.student_id, message: s.created(res.transport_number) };
+        return { id: res.student_id, message: s.created(res.transport_number, Boolean(payload.national_id)) };
       }
       unwrap(
         await supabase
@@ -147,6 +155,7 @@ function StudentForm({ universityId, studentId, initial }: { universityId: strin
           .update({
             full_name: name.ok ? name.value : form.full_name,
             university_student_no: no.ok ? no.value : form.university_student_no,
+            national_id: nid?.ok ? nid.value : null,
             phone_e164: phone.ok ? phone.value : form.phone,
             college_id: form.college_id,
             residence_text: payload.residence_text,
@@ -187,6 +196,14 @@ function StudentForm({ universityId, studentId, initial }: { universityId: strin
           </Field>
           <Field label={t.student.universityNo} htmlFor={ids.no} error={show(errors.no)}>
             <Input id={ids.no} inputMode="numeric" dir="ltr" className="text-start" value={form.university_student_no} onChange={(e) => set({ university_student_no: e.target.value })} />
+          </Field>
+          <Field
+            label={t.student.nationalId}
+            htmlFor={ids.nid}
+            error={show(errors.nid)}
+            hint={studentId ? s.nationalIdEditHint : s.nationalIdHint}
+          >
+            <Input id={ids.nid} inputMode="numeric" dir="ltr" className="text-start" value={form.national_id} onChange={(e) => set({ national_id: e.target.value })} data-testid="student-national-id" />
           </Field>
           <Field label={t.student.phone} htmlFor={ids.phone} error={show(errors.phone)}>
             <Input id={ids.phone} inputMode="tel" dir="ltr" className="text-start" value={form.phone} onChange={(e) => set({ phone: e.target.value })} />

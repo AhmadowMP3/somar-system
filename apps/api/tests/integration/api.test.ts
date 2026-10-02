@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs';
 import type { FastifyInstance } from 'fastify';
 import sharp from 'sharp';
+import * as XLSX from 'xlsx';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { buildApp } from '../../src/app.js';
@@ -108,7 +109,7 @@ describe('19. Excel import of demo-import.xlsx', () => {
 
     const { data: students } = await service
       .from('students')
-      .select('university_student_no, full_name, phone_e164, needs_area_mapping, transport_number, profile_id')
+      .select('university_student_no, national_id, full_name, phone_e164, college_id, work_days, shift_start, needs_area_mapping, transport_number, profile_id')
       .eq('university_id', fx.universityId);
     expect(students?.length).toBe(IMPORT_EXPECTED.created);
     const winner = students?.find((s) => s.university_student_no === IMPORT_EXPECTED.duplicateNewerFirst.studentNo);
@@ -124,9 +125,17 @@ describe('19. Excel import of demo-import.xlsx', () => {
     const { data: college } = await service.from('colleges').select('id').eq('university_id', fx.universityId).eq('name', 'كلية الصيدلة');
     expect(college?.length).toBe(1);
 
-    // the imported student can log in with the transport number and must change the password
+    // optional answers left empty are imported as empty (asked at first login)
+    expect(students?.find((s) => s.university_student_no === IMPORT_EXPECTED.incompleteStudentNo)).toMatchObject({
+      phone_e164: null,
+      college_id: null,
+      work_days: [],
+      shift_start: null,
+    });
+
+    // the imported student logs in with the national number and must change the password
     const one = students?.[0];
-    const client = await signIn(one?.transport_number as string, one?.transport_number as string);
+    const client = await signIn(one?.transport_number as string, one?.national_id as string);
     const { data: me } = await client.from('profiles').select('must_change_password, role').single();
     expect(me).toEqual({ must_change_password: true, role: 'student' });
 
@@ -302,5 +311,53 @@ describe('scan endpoint & health', () => {
   it('healthz reports db up', async () => {
     const res = await app.inject({ method: 'GET', url: '/api/healthz' });
     expect(res.json()).toMatchObject({ ok: true, db: 'up' });
+  });
+});
+
+describe('national number as the initial password', () => {
+  const sheet = (rows: unknown[][]) => {
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(rows), 'Sheet1');
+    return XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' }) as Buffer;
+  };
+  const headers = [
+    'Timestamp', 'الاسم الثلاثي', 'الرقم جامعي', 'الرقم الوطني', 'رقم الهاتف المستخدم في الوتس ضمن مجموعة',
+    'الكلية التابع اليها', 'المنطقة القريبة اليك', 'اختر أيام دوامك بالاسبوع', 'متى يبدأ دوامك الاسبوعي',
+  ];
+
+  it('imports the column, logs in with it, and an admin reset goes back to it', async () => {
+    const no = String(700000000 + Math.floor(Math.random() * 1e8));
+    const no2 = String(Number(no) + 1);
+    const file = sheet([
+      headers,
+      ['2025/09/01 10:00:00', 'سامي رامي حداد', no, '02010045678', '0944000111', 'كلية طب الأسنان', 'الرجاء', 'السبت, الأحد', '8'],
+      ['2025/09/01 10:05:00', 'رنا سامي حداد', no2, null, '0944000112', 'كلية طب الأسنان', 'الرجاء', 'السبت', '10'],
+    ]);
+    const body = multipart([
+      { name: 'university_id', value: fx.universityId },
+      { name: 'dry_run', value: 'false' },
+      { name: 'file', filename: 'students.xlsx', contentType: 'application/octet-stream', data: file },
+    ]);
+    const res = await app.inject({ method: 'POST', url: '/api/students/import', headers: { ...body.headers, ...auth(adminToken) }, payload: body.payload });
+    expect(res.statusCode, res.body).toBe(200);
+    // the national number is required now: the row without it is rejected
+    expect((res.json() as { summary: { created: number; rejected: number } }).summary).toMatchObject({ created: 1, rejected: 1 });
+
+    const { data: rows } = await service
+      .from('students')
+      .select('id, transport_number, national_id, university_student_no')
+      .eq('university_id', fx.universityId)
+      .in('university_student_no', [no, no2]);
+    const withId = rows?.find((r) => r.university_student_no === no) as { id: string; transport_number: string; national_id: string };
+    expect(rows?.some((r) => r.university_student_no === no2)).toBe(false);
+    expect(withId.national_id).toBe('02010045678');
+    await signIn(withId.transport_number, '02010045678');
+    await expect(signIn(withId.transport_number, withId.transport_number)).rejects.toThrow();
+
+    const { data: profile } = await service.from('students').select('profile_id').eq('id', withId.id).single();
+    await service.auth.admin.updateUserById((profile as { profile_id: string }).profile_id, { password: 'Changed@123' });
+    const reset = await app.inject({ method: 'POST', url: `/api/students/${withId.id}/reset-password`, headers: auth(adminToken) });
+    expect(reset.statusCode).toBe(200);
+    await signIn(withId.transport_number, '02010045678');
   });
 });

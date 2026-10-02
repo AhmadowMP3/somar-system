@@ -95,3 +95,39 @@ describe('first-login setup and schedule statistics', () => {
     expect(denied.error?.message).toBe('FORBIDDEN');
   });
 });
+
+describe('first-login questionnaire for a student imported with only name, numbers', () => {
+  it('requires the missing answers, fills them in, and never overwrites what is on file', async () => {
+    const st = await createStudent(fx, { workDays: [1] });
+    await service.from('students').update({ phone_e164: null, college_id: null, shift_start: null, work_days: [] }).eq('id', st.id);
+    const client = await signIn(st.transportNumber, st.transportNumber);
+    const area = fx.areaIds['الرجاء'];
+    const schedule = [{ dow: 6, outbound: '07:30', return: '14:00' }];
+    const call = (extra: Record<string, unknown>) =>
+      client.rpc('complete_my_setup', { p_area_id: area, p_residence: '', p_schedule: schedule, ...extra });
+
+    expect((await call({})).error?.message).toBe('PHONE_REQUIRED');
+    expect((await call({ p_phone: '+963944000999' })).error?.message).toBe('COLLEGE_REQUIRED');
+    expect((await call({ p_phone: '+963944000999', p_college_id: fx.collegeId })).error?.message).toBe('SHIFT_REQUIRED');
+    expect((await call({ p_phone: '12', p_college_id: fx.collegeId, p_shift_start: '10:00' })).error?.message).toBe('PHONE_INVALID');
+    const { error } = await call({ p_phone: '+963944000999', p_college_id: fx.collegeId, p_shift_start: '10:00' });
+    expect(error).toBeNull();
+    const { data } = await service
+      .from('students')
+      .select('phone_e164, college_id, shift_start, work_days, area_primary_id, setup_completed_at, profiles(phone)')
+      .eq('id', st.id)
+      .single();
+    expect(data).toMatchObject({ phone_e164: '+963944000999', college_id: fx.collegeId, shift_start: '10:00:00', work_days: [6], area_primary_id: area });
+    expect((data as unknown as { profiles: { phone: string } }).profiles.phone).toBe('+963944000999');
+
+    // a student whose data is complete cannot replace it through the questionnaire
+    const full = await createStudent(fx, { workDays: [1] });
+    const asFull = await signIn(full.transportNumber, full.transportNumber);
+    const res = await asFull.rpc('complete_my_setup', {
+      p_area_id: area, p_residence: '', p_schedule: schedule, p_phone: '+963944000111', p_shift_start: '14:00',
+    });
+    expect(res.error).toBeNull();
+    const { data: kept } = await service.from('students').select('phone_e164, shift_start').eq('id', full.id).single();
+    expect(kept).toEqual({ phone_e164: '+963944123456', shift_start: '08:00:00' });
+  });
+});

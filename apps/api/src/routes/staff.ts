@@ -3,7 +3,7 @@ import { z } from 'zod';
 import { roleForPermissions, staffInputSchema } from '@somar/shared';
 import { writeAudit } from '../lib/audit.js';
 import { assertUniversityScope, authOf, clientIp, type AppContext } from '../lib/auth.js';
-import { ApiError, notFound } from '../lib/errors.js';
+import { ApiError, badRequest, notFound } from '../lib/errors.js';
 import { readMultipart } from '../lib/multipart.js';
 import { processLogo } from '../services/images.js';
 import { provisionStaff } from '../services/provisioning.js';
@@ -13,9 +13,21 @@ export async function staffRoutes(app: FastifyInstance, ctx: AppContext) {
   const adminOnly = requireRole('admin');
   const staff = requireRole('admin', 'university_supervisor');
 
+  /**
+   * Transport numbers double as login codes: a staff code shaped like one (SHB0003, SHB-0003, SHB-D001…)
+   * would collide with a future student's or doctor's account.
+   */
+  async function looksLikeTransportNumber(code: string): Promise<boolean> {
+    const { data } = await db.from('universities').select('transport_prefix');
+    return (data ?? []).some(({ transport_prefix: prefix }) =>
+      new RegExp(`^${String(prefix).replace(/[^A-Z0-9]/gi, '')}-?[DE]?\\d+$`, 'i').test(code.trim()),
+    );
+  }
+
   app.post('/api/supervisors', { preHandler: adminOnly }, async (request, reply) => {
     const auth = authOf(request);
     const input = staffInputSchema.parse(request.body);
+    if (await looksLikeTransportNumber(input.login_code)) throw badRequest('LOGIN_CODE_RESERVED');
     const permissions = input.permissions ? [...new Set(input.permissions)].sort() : null;
     const role = permissions ? roleForPermissions(permissions) : input.role;
     const { profileId } = await provisionStaff(db, cfg, { ...input, role, must_change_password: true });

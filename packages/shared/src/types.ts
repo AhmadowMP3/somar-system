@@ -14,14 +14,18 @@ export type ScanSuccess = {
     id: string;
     full_name: string;
     transport_number: string;
+    /** The college, or a doctor's / employee's job title. */
     college: string | null;
+    kind?: 'student' | 'doctor' | 'employee';
     photo_path: string | null;
     photo_url: string | null;
   };
-  quota: number;
+  /** Doctors and university employees: no package and no quota (quota/remaining are null). */
+  unlimited?: boolean;
+  quota: number | null;
   used: number;
-  remaining_after: number;
-  subscription_ends_on: string;
+  remaining_after: number | null;
+  subscription_ends_on: string | null;
   offday_override: boolean;
   warning: 'LOW_BALANCE' | null;
 };
@@ -51,6 +55,8 @@ export const studentInputSchema = z.object({
   college_id: z.string().uuid(),
   full_name: z.string().trim().min(1).max(200),
   university_student_no: z.string().trim().min(1).max(40),
+  /** Becomes the initial password; the transport number is used when it is empty. */
+  national_id: z.string().trim().max(40).nullish(),
   phone: z.string().trim().min(1).max(40),
   residence_text: z.string().trim().max(300).nullish(),
   area_primary_id: z.string().uuid().nullish(),

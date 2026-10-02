@@ -44,6 +44,21 @@ function RoutesBody({ universityId }: { universityId: string }) {
     onError: (e) => toast.error(errorMessage(e)),
   });
   const [copyingStop, setCopyingStop] = useState<{ route: RouteRow; stop: StopRow } | null>(null);
+  const [deletingRoute, setDeletingRoute] = useState<RouteRow | null>(null);
+  // its stops on the route and the cached map path go with it; the stop library is kept
+  const removeRoute = useMutation({
+    mutationFn: async (route: RouteRow) => unwrap(await supabase.from('routes').delete().eq('id', route.id).select('id')),
+    onSuccess: (rows) => {
+      if (!(rows as unknown[] | null)?.length) {
+        toast.error(t.errors.FORBIDDEN ?? '');
+        return;
+      }
+      toast.success(r.deleted);
+      setDeletingRoute(null);
+      invalidate();
+    },
+    onError: (e) => toast.error(errorMessage(e)),
+  });
   const [openIds, setOpenIds] = useState<Set<string>>(new Set());
   const [mapRoute, setMapRoute] = useState<RouteRow | null>(null);
   const toggle = (id: string) =>
@@ -121,6 +136,10 @@ function RoutesBody({ universityId }: { universityId: string }) {
                             {t.routeMap.map}
                           </Button>
                         ) : null}
+                        <Button size="sm" onClick={() => setDeletingRoute(route)} data-testid={`delete-route-${route.id}`}>
+                          <Trash2 className="h-4 w-4 text-danger" aria-hidden />
+                          {r.delete}
+                        </Button>
                         <Button size="sm" variant="secondary" onClick={() => setEditingStop({ route, stop: null })}>
                           <Plus className="h-4 w-4" aria-hidden />
                           {r.addStop}
@@ -194,6 +213,17 @@ function RoutesBody({ universityId }: { universityId: string }) {
       >
         {mapRoute ? <RouteMap route={mapRoute} /> : null}
       </Dialog>
+      {deletingRoute ? (
+        <ConfirmDialog
+          open
+          onOpenChange={(o) => !o && setDeletingRoute(null)}
+          title={r.deleteTitle(deletingRoute.name)}
+          body={r.deleteConfirm}
+          danger
+          busy={removeRoute.isPending}
+          onConfirm={() => removeRoute.mutate(deletingRoute)}
+        />
+      ) : null}
       {copyingStop ? (
         <CopyStopDialog
           source={copyingStop.route}

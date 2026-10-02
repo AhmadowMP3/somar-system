@@ -16,6 +16,7 @@ import { api } from '@/lib/api';
 import { errorMessage } from '@/lib/errors';
 import { PHOTO_BUCKET, signedUrl, supabase, unwrap } from '@/lib/supabase';
 import { ActiveBadge, useIsAdmin, usePackages } from './common';
+import { memberPath } from './MembersPage';
 
 type StudentFull = {
   id: string;
@@ -24,12 +25,17 @@ type StudentFull = {
   transport_number: string;
   qr_token: string;
   full_name: string;
-  university_student_no: string;
-  phone_e164: string;
+  kind: 'student' | 'doctor' | 'employee';
+  university_student_no: string | null;
+  national_id: string | null;
+  phone_e164: string | null;
   residence_text: string | null;
   area_other_text: string | null;
   work_days: number[];
-  shift_start: string;
+  shift_start: string | null;
+  job_title: string | null;
+  work_hours_text: string | null;
+  notes: string | null;
   photo_path: string | null;
   is_active: boolean;
   colleges: { name: string } | null;
@@ -78,7 +84,7 @@ export default function StudentDetailPage() {
         await supabase
           .from('students')
           .select(
-            'id, profile_id, university_id, transport_number, qr_token, full_name, university_student_no, phone_e164, residence_text, area_other_text, work_days, shift_start, photo_path, is_active, colleges(name), area1:areas!students_area_primary_id_fkey(name), area2:areas!students_area_secondary_id_fkey(name), profiles(role, must_change_password)',
+            'id, profile_id, university_id, transport_number, qr_token, full_name, kind, university_student_no, national_id, phone_e164, residence_text, area_other_text, work_days, shift_start, job_title, work_hours_text, notes, photo_path, is_active, colleges(name), area1:areas!students_area_primary_id_fkey(name), area2:areas!students_area_secondary_id_fkey(name), profiles(role, must_change_password)',
           )
           .eq('id', id)
           .single(),
@@ -177,6 +183,9 @@ export default function StudentDetailPage() {
     <QueryState query={student}>
       {(st) => {
         const role = st.profiles?.role;
+        // Doctors and university employees: no package, unlimited trips.
+        const member = st.kind !== 'student' ? st.kind : null;
+        const editHref = member ? `${memberPath(member)}/${id}/edit` : `/admin/students/${id}/edit`;
         return (
           <div className="space-y-4">
             <PageHeader
@@ -185,7 +194,7 @@ export default function StudentDetailPage() {
               actions={
                 <>
                   <Button asChild size="sm">
-                    <Link to={`/admin/students/${id}/edit`}>
+                    <Link to={editHref}>
                       <Pencil className="h-4 w-4" aria-hidden />
                       {t.common.edit}
                     </Link>
@@ -215,14 +224,29 @@ export default function StudentDetailPage() {
                 <QrCode token={st.qr_token} className="h-36 w-36" label={s.qr} />
               </Card>
               <Card className="lg:col-span-2">
-                <CardTitle>{s.detail}</CardTitle>
+                <CardTitle>{member ? t.admin.members[member].detail : s.detail}</CardTitle>
                 <dl className="grid grid-cols-[auto,1fr] gap-x-4 gap-y-2 text-sm">
-                  <dt className="text-muted">{t.student.universityNo}</dt>
-                  <dd className="num">{st.university_student_no}</dd>
+                  {member ? (
+                    <>
+                      <dt className="text-muted">{t.student.jobTitle}</dt>
+                      <dd>{st.job_title ?? t.common.none}</dd>
+                    </>
+                  ) : (
+                    <>
+                      <dt className="text-muted">{t.student.universityNo}</dt>
+                      <dd className="num">{st.university_student_no}</dd>
+                      <dt className="text-muted">{t.student.nationalId}</dt>
+                      <dd className="num">{st.national_id ?? t.common.none}</dd>
+                    </>
+                  )}
                   <dt className="text-muted">{t.student.phone}</dt>
-                  <dd className="num">{formatPhoneDisplay(st.phone_e164)}</dd>
-                  <dt className="text-muted">{t.student.college}</dt>
-                  <dd>{st.colleges?.name}</dd>
+                  <dd className="num">{st.phone_e164 ? formatPhoneDisplay(st.phone_e164) : t.common.none}</dd>
+                  {member ? null : (
+                    <>
+                      <dt className="text-muted">{t.student.college}</dt>
+                      <dd>{st.colleges?.name}</dd>
+                    </>
+                  )}
                   <dt className="text-muted">{t.student.area}</dt>
                   <dd>
                     {st.area1?.name ?? t.common.none}
@@ -232,13 +256,38 @@ export default function StudentDetailPage() {
                   <dt className="text-muted">{t.student.residence}</dt>
                   <dd>{st.residence_text ?? t.common.none}</dd>
                   <dt className="text-muted">{t.student.workDays}</dt>
-                  <dd>{st.work_days.map((d) => t.days[d]).join(t.listSeparator)}</dd>
-                  <dt className="text-muted">{t.student.shiftStart}</dt>
-                  <dd className="num">{formatClock(st.shift_start)}</dd>
+                  <dd>{st.work_days.length ? st.work_days.map((d) => t.days[d]).join(t.listSeparator) : t.common.none}</dd>
+                  {st.shift_start ? (
+                    <>
+                      <dt className="text-muted">{t.student.shiftStart}</dt>
+                      <dd className="num">{formatClock(st.shift_start)}</dd>
+                    </>
+                  ) : null}
+                  {st.work_hours_text ? (
+                    <>
+                      <dt className="text-muted">{t.student.workHours}</dt>
+                      <dd>{st.work_hours_text}</dd>
+                    </>
+                  ) : null}
+                  {st.notes ? (
+                    <>
+                      <dt className="text-muted">{t.admin.members.notes}</dt>
+                      <dd className="whitespace-pre-line">{st.notes}</dd>
+                    </>
+                  ) : null}
                 </dl>
               </Card>
             </div>
 
+            {member ? (
+              <Card className="border-success/40">
+                <CardTitle>{s.balanceThisWeek}</CardTitle>
+                <p className="text-3xl font-extrabold text-success" data-testid="detail-quota">
+                  {t.admin.members.unlimited}
+                </p>
+                <p className="text-sm text-muted">{t.admin.members.unlimitedNote}</p>
+              </Card>
+            ) : (
             <QueryState query={dash}>
               {(d) => (
                 <div className="grid gap-4 lg:grid-cols-2">
@@ -271,16 +320,19 @@ export default function StudentDetailPage() {
                 </div>
               )}
             </QueryState>
+            )}
 
             <Card>
               <CardTitle>{t.common.actions}</CardTitle>
               <div className="flex flex-wrap gap-3">
                 {isAdmin ? (
                   <>
-                    <ActionButton icon={<PackageIcon className="h-4 w-4" />} onClick={() => setAction('assign')} testId="assign-package">
-                      {s.assign}
-                    </ActionButton>
-                    {dash.data?.subscription ? (
+                    {member ? null : (
+                      <ActionButton icon={<PackageIcon className="h-4 w-4" />} onClick={() => setAction('assign')} testId="assign-package">
+                        {s.assign}
+                      </ActionButton>
+                    )}
+                    {dash.data?.subscription && !member ? (
                       <>
                         <ActionButton icon={<PlusCircle className="h-4 w-4" />} onClick={() => setAction('adjust')}>
                           {s.addTrips}
@@ -320,6 +372,7 @@ export default function StudentDetailPage() {
             <ScheduleCard studentId={st.id} workDays={st.work_days} />
 
             <div className="grid gap-4 lg:grid-cols-2">
+              {member ? null : (
               <Card>
                 <CardTitle>{s.adjustments}</CardTitle>
                 {dash.data?.subscription ? (
@@ -344,7 +397,8 @@ export default function StudentDetailPage() {
                   <p className="text-sm text-muted">{s.noSubscription}</p>
                 )}
               </Card>
-              <Card>
+              )}
+              <Card className={member ? 'lg:col-span-2' : undefined}>
                 <CardTitle>{s.scanHistory}</CardTitle>
                 <QueryState query={scans} empty={(rows) => (rows.length ? null : <EmptyState title={s.noScans} />)}>
                   {(rows) => (

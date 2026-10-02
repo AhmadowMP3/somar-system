@@ -42,12 +42,16 @@ export type Dashboard = {
     qr_token: string;
     college: string | null;
     photo_path: string | null;
-    phone_e164: string;
-    university_student_no: string;
+    phone_e164: string | null;
+    university_student_no: string | null;
     work_days: number[];
-    shift_start: string;
+    shift_start: string | null;
     residence_text: string | null;
     is_active: boolean;
+    /** Doctors and university employees ride without a package (unlimited trips). */
+    kind?: 'student' | 'doctor' | 'employee';
+    job_title?: string | null;
+    work_hours_text?: string | null;
   };
   university: { id: string; name: string; logo_path: string | null; week_start_dow: number } | null;
   balance: { week_start: string; quota: number; used: number; remaining: number };
@@ -127,7 +131,14 @@ export function StudentHome() {
           <PickupHomeCard />
 
           <Card>
-            {d.subscription ? (
+            {d.student.kind && d.student.kind !== 'student' ? (
+              <>
+                <p className="text-3xl font-extrabold text-success" data-testid="remaining">
+                  {t.student.unlimited}
+                </p>
+                <p className="mt-2 text-sm text-muted">{t.student.unlimitedHint}</p>
+              </>
+            ) : d.subscription ? (
               <>
                 <p className="text-sm text-muted">{t.student.remaining}</p>
                 <p className="mt-1 text-4xl font-extrabold text-brand-ink" data-testid="remaining">
@@ -172,13 +183,15 @@ export function StudentHome() {
             )}
           </Card>
 
-          <Link to="/packages" className="flex min-h-touch items-center justify-between rounded-xl border border-border bg-bg p-4">
-            <span className="flex items-center gap-2 font-semibold">
-              <PackageIcon className="h-5 w-5 text-brand-ink" aria-hidden />
-              {t.nav.packages}
-            </span>
-            <ChevronLeft className="h-5 w-5 text-muted" aria-hidden />
-          </Link>
+          {d.student.kind && d.student.kind !== 'student' ? null : (
+            <Link to="/packages" className="flex min-h-touch items-center justify-between rounded-xl border border-border bg-bg p-4">
+              <span className="flex items-center gap-2 font-semibold">
+                <PackageIcon className="h-5 w-5 text-brand-ink" aria-hidden />
+                {t.nav.packages}
+              </span>
+              <ChevronLeft className="h-5 w-5 text-muted" aria-hidden />
+            </Link>
+          )}
 
           <Dialog
             open={cardOpen}
@@ -212,7 +225,7 @@ function MyCard({ student }: { student: Dashboard['student'] }) {
   const card: CardValues = {
     full_name: student.full_name,
     transport_number: student.transport_number,
-    college: student.college ?? '',
+    college: student.college ?? student.job_title ?? (student.kind ? (t.student.kind[student.kind] ?? '') : ''),
     qr_token: student.qr_token,
     photo: photo.data ?? null,
   };
@@ -739,16 +752,33 @@ export function AccountPage() {
               <dl className="grid grid-cols-[auto,1fr] gap-x-4 gap-y-2 text-sm">
                 <dt className="text-muted">{t.student.university}</dt>
                 <dd>{d.university?.name}</dd>
-                <dt className="text-muted">{t.student.college}</dt>
-                <dd>{d.student.college}</dd>
-                <dt className="text-muted">{t.student.universityNo}</dt>
-                <dd className="num">{d.student.university_student_no}</dd>
-                <dt className="text-muted">{t.student.phone}</dt>
-                <dd className="num">{formatPhoneDisplay(d.student.phone_e164)}</dd>
+                {d.student.kind && d.student.kind !== 'student' ? (
+                  <>
+                    <dt className="text-muted">{t.student.jobTitle}</dt>
+                    <dd>{d.student.job_title ?? t.student.kind[d.student.kind]}</dd>
+                  </>
+                ) : (
+                  <>
+                    <dt className="text-muted">{t.student.college}</dt>
+                    <dd>{d.student.college}</dd>
+                    <dt className="text-muted">{t.student.universityNo}</dt>
+                    <dd className="num">{d.student.university_student_no}</dd>
+                  </>
+                )}
+                {d.student.phone_e164 ? (
+                  <>
+                    <dt className="text-muted">{t.student.phone}</dt>
+                    <dd className="num">{formatPhoneDisplay(d.student.phone_e164)}</dd>
+                  </>
+                ) : null}
                 <dt className="text-muted">{t.student.workDays}</dt>
                 <dd>{d.student.work_days.map((w) => t.days[w]).join(t.listSeparator)}</dd>
-                <dt className="text-muted">{t.student.shiftStart}</dt>
-                <dd className="num">{formatClock(d.student.shift_start)}</dd>
+                {d.student.shift_start ? (
+                  <>
+                    <dt className="text-muted">{t.student.shiftStart}</dt>
+                    <dd className="num">{formatClock(d.student.shift_start)}</dd>
+                  </>
+                ) : null}
                 {d.student.residence_text ? (
                   <>
                     <dt className="text-muted">{t.student.residence}</dt>
@@ -756,7 +786,7 @@ export function AccountPage() {
                   </>
                 ) : null}
                 <dt className="text-muted">{t.student.package}</dt>
-                <dd>{d.subscription?.package_name ?? t.common.none}</dd>
+                <dd>{d.student.kind && d.student.kind !== 'student' ? t.student.unlimited : (d.subscription?.package_name ?? t.common.none)}</dd>
               </dl>
               <p className="mt-3 text-xs text-muted">{t.student.readOnlyNote}</p>
             </Card>

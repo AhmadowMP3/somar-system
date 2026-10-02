@@ -4,6 +4,7 @@ import { z } from 'zod';
 import {
   arShared,
   checkFullName,
+  normalizeNationalId,
   normalizePhone,
   normalizeStudentNo,
   studentInputSchema,
@@ -14,13 +15,14 @@ import { assertPermission, assertUniversityScope, authOf, clientIp, type AppCont
 import { ApiError, badRequest, conflict, notFound } from '../lib/errors.js';
 import { readMultipart } from '../lib/multipart.js';
 import { runImport } from '../services/import.js';
-import { provisionStudent } from '../services/provisioning.js';
+import { initialPassword, provisionStudent } from '../services/provisioning.js';
 
 type StudentRow = {
   id: string;
   profile_id: string | null;
   university_id: string;
   transport_number: string;
+  national_id: string | null;
   qr_token: string;
   photo_path: string | null;
 };
@@ -35,7 +37,7 @@ export async function studentRoutes(app: FastifyInstance, ctx: AppContext) {
     if (!parsed.success) throw notFound();
     const { data } = await db
       .from('students')
-      .select('id, profile_id, university_id, transport_number, qr_token, photo_path')
+      .select('id, profile_id, university_id, transport_number, national_id, qr_token, photo_path')
       .eq('id', id)
       .maybeSingle<StudentRow>();
     if (!data) throw notFound();
@@ -78,11 +80,15 @@ export async function studentRoutes(app: FastifyInstance, ctx: AppContext) {
     const name = checkFullName(input.full_name);
     const no = normalizeStudentNo(input.university_student_no);
     const phone = normalizePhone(input.phone);
+    const nationalId = input.national_id ? normalizeNationalId(input.national_id) : null;
     const reasons: string[] = [];
     if (!name.ok) reasons.push(name.reason === 'empty' ? arShared.import.NAME_REQUIRED : arShared.import.NAME_TOO_SHORT);
     if (!no.ok) reasons.push(arShared.import.STUDENT_NO_INVALID);
     if (!phone.ok) reasons.push(arShared.import.PHONE_INVALID);
-    if (!name.ok || !no.ok || !phone.ok) throw badRequest('VALIDATION', reasons.join('، '), { reasons });
+    if (nationalId && !nationalId.ok) reasons.push(arShared.import.NATIONAL_ID_INVALID);
+    if (!name.ok || !no.ok || !phone.ok || (nationalId && !nationalId.ok)) {
+      throw badRequest('VALIDATION', reasons.join('، '), { reasons });
+    }
 
     const { data: college } = await db
       .from('colleges')
@@ -106,6 +112,7 @@ export async function studentRoutes(app: FastifyInstance, ctx: AppContext) {
       {
         full_name: name.value,
         university_student_no: no.value,
+        national_id: nationalId?.ok ? nationalId.value : null,
         phone_e164: phone.value,
         college_id: input.college_id,
         residence_text: input.residence_text || null,
@@ -129,7 +136,7 @@ export async function studentRoutes(app: FastifyInstance, ctx: AppContext) {
       const auth = authOf(request);
       const s = await loadStudent(request.params.id);
       if (!s.profile_id) throw notFound();
-      const { error } = await db.auth.admin.updateUserById(s.profile_id, { password: s.transport_number });
+      const { error } = await db.auth.admin.updateUserById(s.profile_id, { password: initialPassword(s, s.transport_number) });
       if (error) throw new ApiError(500, 'INTERNAL');
       await db.from('profiles').update({ must_change_password: true }).eq('id', s.profile_id);
       await writeAudit(db, {

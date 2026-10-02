@@ -84,13 +84,15 @@ describe('header matching', () => {
     expect(mapping.area_secondary).toBe('المنطقة القريبة اليك 2');
   });
   it('tolerates trailing spaces, RLM, tatweel and letter variants', () => {
+    const at = (key: string) => IMPORT_FIELDS.findIndex((f) => f.key === key);
     const noisy = headers.map((h) => `‏${h.replace('ال', 'الـ')}  `);
-    noisy[2] = 'الرقم الجامعي ';
+    noisy[at('university_student_no')] = 'الرقم الجامعي ';
     const { mapping, missing } = matchHeaders(noisy);
     expect(missing).toEqual([]);
     expect(mapping.university_student_no).toBe('الرقم الجامعي ');
-    expect(mapping.phone).toBe(noisy[4]);
-    expect(mapping.area_secondary).toBe(noisy[8]);
+    expect(mapping.national_id).toBe(noisy[at('national_id')]);
+    expect(mapping.phone).toBe(noisy[at('phone')]);
+    expect(mapping.area_secondary).toBe(noisy[at('area_secondary')]);
   });
   it('reports missing required columns instead of guessing', () => {
     const { missing } = matchHeaders(headers.filter((h) => h !== 'الاسم الثلاثي'));

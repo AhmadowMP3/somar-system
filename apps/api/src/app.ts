@@ -7,6 +7,7 @@ import { makeAuthGuard, type AppContext } from './lib/auth.js';
 import { ApiError } from './lib/errors.js';
 import { createAdminClient } from './lib/supabase.js';
 import { meRoutes } from './routes/me.js';
+import { memberRoutes } from './routes/members.js';
 import { probeRoutes } from './routes/probe.js';
 import { notificationRoutes } from './routes/notifications.js';
 import { mapRoutes } from './routes/maps.js';
@@ -71,6 +72,7 @@ export async function buildApp(cfg: Config, opts: { logger?: boolean } = {}): Pr
 
   await app.register(async (scope) => {
     await studentRoutes(scope, ctx);
+    await memberRoutes(scope, ctx);
     await meRoutes(scope, ctx);
     await staffRoutes(scope, ctx);
     await scanRoutes(scope, ctx);

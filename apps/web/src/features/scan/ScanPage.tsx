@@ -407,7 +407,9 @@ function ResultPopup({
               {result.student.full_name}
             </p>
             <p className="text-sm text-muted">
-              <span className="num font-mono">{result.student.transport_number}</span> · {result.student.college}
+              <span className="num font-mono">{result.student.transport_number}</span>
+              {result.student.college ? ` · ${result.student.college}` : ''}
+              {result.student.kind && result.student.kind !== 'student' ? ` · ${t.student.kind[result.student.kind]}` : ''}
             </p>
             <div className="flex items-center justify-center gap-3">
               <span data-testid="scan-direction">
@@ -415,20 +417,30 @@ function ResultPopup({
               </span>
               {result.offday_override ? <Badge tone="warning">{t.student.override}</Badge> : null}
             </div>
-            <p className="text-lg">
-              {t.scan.remainingAfter}:{' '}
-              <span className="num text-3xl font-extrabold text-brand-ink" data-testid="scan-remaining">
-                {result.remaining_after}
-              </span>
-              <span className="text-muted">
-                {' '}
-                / <span className="num">{result.quota}</span>
-              </span>
-            </p>
-            {result.warning === 'LOW_BALANCE' ? <Badge tone="warning">{t.scan.lowBalance}</Badge> : null}
-            <p className="text-xs text-muted">
-              {t.scan.subscriptionEnds}: <span className="num">{formatDate(result.subscription_ends_on)}</span>
-            </p>
+            {result.unlimited ? (
+              <p className="text-lg font-extrabold text-success" data-testid="scan-remaining">
+                {t.scan.unlimited}
+              </p>
+            ) : (
+              <>
+                <p className="text-lg">
+                  {t.scan.remainingAfter}:{' '}
+                  <span className="num text-3xl font-extrabold text-brand-ink" data-testid="scan-remaining">
+                    {result.remaining_after}
+                  </span>
+                  <span className="text-muted">
+                    {' '}
+                    / <span className="num">{result.quota}</span>
+                  </span>
+                </p>
+                {result.warning === 'LOW_BALANCE' ? <Badge tone="warning">{t.scan.lowBalance}</Badge> : null}
+                {result.subscription_ends_on ? (
+                  <p className="text-xs text-muted">
+                    {t.scan.subscriptionEnds}: <span className="num">{formatDate(result.subscription_ends_on)}</span>
+                  </p>
+                ) : null}
+              </>
+            )}
           </div>
         ) : (
           <div className="space-y-2 py-6">
