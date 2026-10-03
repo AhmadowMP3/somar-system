@@ -70,13 +70,13 @@ export async function runMemberImport(db: Db, cfg: Config, opts: MemberImportOpt
     const toData = (r: MemberRowResult): MemberData => ({
       kind: opts.kind,
       full_name: r.data!.full_name,
-      phone_e164: r.data!.phone_e164,
+      phone_e164: null,
       job_title: r.data!.job_title,
-      residence_text: r.data!.residence_text,
+      residence_text: null,
       area_primary_id: null,
       work_days: r.data!.work_days,
-      work_hours_text: r.data!.work_hours_text,
-      notes: r.data!.notes,
+      work_hours_text: null,
+      notes: null,
     });
     const failed = (r: MemberRowResult): MemberRowResult => ({ ...r, status: 'rejected', reasons: [arShared.import.PROVISION_FAILED] });
     const out: MemberRowResult[] = [];
@@ -88,21 +88,15 @@ export async function runMemberImport(db: Db, cfg: Config, opts: MemberImportOpt
       const d = toData(r);
       if (r.status === 'updated') {
         const target = existing.get(r.name_key)!;
-        // Fill in what the sheet has; keep what staff already entered when the sheet cell is empty.
-        const patch = Object.fromEntries(
-          Object.entries({
-            full_name: d.full_name,
-            phone_e164: d.phone_e164,
-            job_title: d.job_title,
-            residence_text: d.residence_text,
-            work_hours_text: d.work_hours_text,
-            notes: d.notes,
-            ...(d.work_days.length ? { work_days: d.work_days } : {}),
-          }).filter(([, v]) => v !== null),
-        );
+        // Only name, job and days come from the sheet; an empty job or days cell keeps what is on file.
+        const patch = {
+          full_name: d.full_name,
+          ...(d.job_title ? { job_title: d.job_title } : {}),
+          ...(d.work_days.length ? { work_days: d.work_days } : {}),
+        };
         const { error: upErr } = await db.from('students').update(patch).eq('id', target.id);
         if (!upErr && target.profile_id) {
-          await db.from('profiles').update({ full_name: d.full_name, ...(d.phone_e164 ? { phone: d.phone_e164 } : {}) }).eq('id', target.profile_id);
+          await db.from('profiles').update({ full_name: d.full_name }).eq('id', target.profile_id);
         }
         out.push(upErr ? failed(r) : r);
         continue;

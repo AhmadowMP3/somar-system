@@ -14,16 +14,15 @@ import { cn } from '@/lib/utils';
 import { ActiveBadge, WEEK_DAYS, WithUniversity } from './common';
 
 type MemberRow = {
-  student_id: string;
+  id: string;
   transport_number: string;
   full_name: string;
-  phone_e164: string | null;
   job_title: string | null;
-  residence_text: string | null;
   work_days: number[];
-  has_photo: boolean;
+  photo_path: string | null;
   is_active: boolean;
-  profile_role: string | null;
+  profiles: { role: string } | null;
+  home_stop: { name: string } | null;
 };
 
 /** Base path of a member's pages in the admin panel. */
@@ -56,9 +55,10 @@ function MembersBody({ kind, universityId }: { kind: MemberKind; universityId: s
   const query = useQuery({
     queryKey: ['students', 'members', kind, universityId, filters],
     queryFn: async () => {
+      // members have no package, so the plain table (with their nearest stop) is enough
       let q = supabase
-        .from('v_rider_balance')
-        .select('student_id, transport_number, full_name, phone_e164, job_title, residence_text, work_days, has_photo, is_active, profile_role', {
+        .from('students')
+        .select('id, transport_number, full_name, job_title, work_days, photo_path, is_active, profiles(role), home_stop:stops!students_home_stop_id_fkey(name)', {
           count: 'exact',
         })
         .eq('university_id', universityId)
@@ -70,18 +70,18 @@ function MembersBody({ kind, universityId }: { kind: MemberKind; universityId: s
         q = q.or(`full_name.ilike.%${term}%,transport_number.ilike.%${term}%,phone_e164.ilike.%${term}%,job_title.ilike.%${term}%`);
       }
       if (filters.day) q = q.contains('work_days', [Number(filters.day)]);
-      if (filters.photo === 'yes') q = q.eq('has_photo', true);
-      if (filters.photo === 'no') q = q.eq('has_photo', false);
+      if (filters.photo === 'yes') q = q.not('photo_path', 'is', null);
+      if (filters.photo === 'no') q = q.is('photo_path', null);
       if (filters.active === 'yes') q = q.eq('is_active', true);
       if (filters.active === 'no') q = q.eq('is_active', false);
       const res = await q;
-      return { rows: unwrap(res) as MemberRow[], count: res.count ?? 0 };
+      return { rows: unwrap(res) as unknown as MemberRow[], count: res.count ?? 0 };
     },
   });
 
   const printHref = useMemo(() => {
     const rows = query.data?.rows ?? [];
-    if (rows.length && rows.length <= 60) return `/admin/cards?ids=${rows.map((r) => r.student_id).join(',')}`;
+    if (rows.length && rows.length <= 60) return `/admin/cards?ids=${rows.map((r) => r.id).join(',')}`;
     return `/admin/cards?university=${universityId}&kind=${kind}`;
   }, [query.data, universityId, kind]);
 
@@ -153,8 +153,8 @@ function MembersBody({ kind, universityId }: { kind: MemberKind; universityId: s
         {(d) => (
           <DataList
             rows={d.rows}
-            rowKey={(r) => r.student_id}
-            onRowClick={(r) => navigate(`${memberPath(kind)}/${r.student_id}`)}
+            rowKey={(r) => r.id}
+            onRowClick={(r) => navigate(`${memberPath(kind)}/${r.id}`)}
             cardTitle={(r) => (
               <span className="flex items-center justify-between gap-2">
                 <span>{r.full_name}</span>
@@ -170,18 +170,23 @@ function MembersBody({ kind, universityId }: { kind: MemberKind; universityId: s
                 cell: (r) => (
                   <span className="flex flex-wrap items-center gap-1">
                     {r.full_name}
-                    {r.profile_role === 'supervisor' ? <Badge tone="info">{t.admin.students.isSupervisor}</Badge> : null}
+                    {r.profiles?.role === 'supervisor' ? <Badge tone="info">{t.admin.students.isSupervisor}</Badge> : null}
                   </span>
                 ),
               },
               { key: 'job', header: t.student.jobTitle, cell: (r) => r.job_title ?? t.common.none },
+              {
+                key: 'stop',
+                header: t.student.homeStop,
+                cell: (r) => r.home_stop?.name ?? <span className="text-muted">{t.admin.members.stopPending}</span>,
+              },
               {
                 key: 'days',
                 header: t.student.workDays,
                 cell: (r) => (r.work_days.length ? r.work_days.map((x) => t.days[x]).join(t.listSeparator) : t.common.none),
               },
               { key: 'trips', header: t.student.remainingShort, cell: () => <Badge tone="success">{m.unlimited}</Badge> },
-              { key: 'photo', header: t.student.photo, cell: (r) => (r.has_photo ? <Badge tone="success">✓</Badge> : <Badge>{f.noPhoto}</Badge>) },
+              { key: 'photo', header: t.student.photo, cell: (r) => (r.photo_path ? <Badge tone="success">✓</Badge> : <Badge>{f.noPhoto}</Badge>) },
               { key: 'status', header: t.common.status, cell: (r) => <ActiveBadge active={r.is_active} /> },
             ]}
           />

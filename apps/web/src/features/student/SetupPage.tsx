@@ -10,6 +10,7 @@ import { t } from '@/i18n/ar';
 import { errorMessage } from '@/lib/errors';
 import { supabase, unwrap } from '@/lib/supabase';
 import { cn } from '@/lib/utils';
+import { stopLabel, useStopOptions } from '@/features/admin/common';
 
 export type DayRow = { dow: number; on: boolean; outbound: string; ret: string };
 export type ScheduleRow = { dow: number; outbound_time: string; return_time: string };
@@ -177,6 +178,7 @@ function SetupWizard() {
   });
 
   if (data.isLoading || !data.data || !steps.length) return <ListSkeleton rows={4} />;
+  if (data.data.student.kind !== 'student') return <MemberStopStep universityId={me?.student?.university_id as string} />;
   const position = Math.min(index, steps.length - 1);
   const step = steps[position] as Step;
   const dayRow = step.kind === 'times' ? days.find((d) => d.dow === step.dow) : undefined;
@@ -221,6 +223,7 @@ function SetupWizard() {
 
   return (
     <form className="space-y-4" onSubmit={next} noValidate>
+      <SetupHeader title={s.title} intro={s.intro} />
       <div>
         <p className="mb-1 text-xs font-semibold text-muted" data-testid="setup-progress">
           {s.progress(position + 1, steps.length)}
@@ -381,6 +384,69 @@ function SetupWizard() {
   );
 }
 
+function SetupHeader({ title, intro }: { title: string; intro: string }) {
+  return (
+    <div className="mb-5 flex flex-col items-center gap-3 text-center">
+      <Logo className="h-14" />
+      <h1 className="text-2xl font-extrabold text-brand-ink">{title}</h1>
+      <p className="text-sm text-muted">{intro}</p>
+    </div>
+  );
+}
+
+/** Doctors and university employees: one question, their nearest stop from the stop library. */
+function MemberStopStep({ universityId }: { universityId: string }) {
+  const s = t.setup;
+  const { refreshMe } = useAuth();
+  const navigate = useNavigate();
+  const qc = useQueryClient();
+  const stops = useStopOptions(universityId);
+  const [stopId, setStopId] = useState('');
+  const [error, setError] = useState<string | null>(null);
+  const id = useId();
+  const save = useMutation({
+    mutationFn: async () => unwrap(await supabase.rpc('complete_member_setup', { p_stop_id: stopId })),
+    onSuccess: async () => {
+      void qc.invalidateQueries({ queryKey: ['my-setup'] });
+      void qc.invalidateQueries({ queryKey: ['student-dashboard'] });
+      await refreshMe();
+      navigate('/', { replace: true });
+    },
+    onError: (e) => setError(errorMessage(e)),
+  });
+  const submit = (e: FormEvent) => {
+    e.preventDefault();
+    const problem = stopId ? null : (s.errors.stop ?? null);
+    setError(problem);
+    if (!problem) save.mutate();
+  };
+  return (
+    <form className="space-y-4" onSubmit={submit} noValidate>
+      <SetupHeader title={s.memberTitle} intro={s.memberIntro} />
+      <Card className="space-y-4" data-testid="setup-step-stop">
+        <Field label={<span className="text-lg font-bold">{s.q.stop}</span>} htmlFor={id} hint={s.hint.stop}>
+          <Select id={id} value={stopId} onChange={(e) => setStopId(e.target.value)} disabled={stops.isLoading} data-testid="setup-stop">
+            <option value="">{t.common.select}</option>
+            {(stops.data ?? []).map((x) => (
+              <option key={x.id} value={x.id}>
+                {stopLabel(x)}
+              </option>
+            ))}
+          </Select>
+        </Field>
+      </Card>
+      {error ? (
+        <p role="alert" className="rounded-lg bg-danger/10 p-3 text-sm font-semibold text-danger">
+          {error}
+        </p>
+      ) : null}
+      <Button type="submit" variant="primary" size="lg" className="w-full" disabled={save.isPending} data-testid="setup-save">
+        {save.isPending ? t.common.saving : s.save}
+      </Button>
+    </form>
+  );
+}
+
 function TimeSelect({ label, value, onChange, testId }: { label: string; value: string; onChange: (v: string) => void; testId: string }) {
   const id = useId();
   const options = value && !TIME_OPTIONS.includes(value) ? [value, ...TIME_OPTIONS] : TIME_OPTIONS;
@@ -398,16 +464,12 @@ function TimeSelect({ label, value, onChange, testId }: { label: string; value: 
   );
 }
 
-/** Blocking first-login step, right after the password change (the photo comes next). */
+/** Blocking first-login step, right after the password change (the photo comes next). Students answer
+ * the questionnaire; doctors and university employees pick their nearest stop. */
 export function SetupPage() {
   return (
     <main className="min-h-dvh bg-surface px-4 py-6">
       <div className="mx-auto max-w-lg">
-        <div className="mb-5 flex flex-col items-center gap-3 text-center">
-          <Logo className="h-14" />
-          <h1 className="text-2xl font-extrabold text-brand-ink">{t.setup.title}</h1>
-          <p className="text-sm text-muted">{t.setup.intro}</p>
-        </div>
         <SetupWizard />
         <CreditFooter />
       </div>

@@ -157,8 +157,15 @@ describe('doctors and university employees', () => {
 
     const first = await runImport('doctor', file, false);
     expect(first.summary).toMatchObject({ created: 3, duplicates: 1 });
-    const { data: muntaha } = await service.from('students').select('full_name, work_days, residence_text, notes').eq('university_id', fx.universityId).ilike('full_name', '%منتهى%');
-    expect(muntaha).toEqual([{ full_name: 'منتهى عبد الحميد عون', work_days: [1, 7], residence_text: 'حلب الجديدة شمالي', notes: null }]);
+    // only name, job and days are imported; residence, hours and notes are ignored
+    const { data: muntaha } = await service
+      .from('students')
+      .select('full_name, job_title, work_days, residence_text, work_hours_text, notes, phone_e164')
+      .eq('university_id', fx.universityId)
+      .ilike('full_name', '%منتهى%');
+    expect(muntaha).toEqual([
+      { full_name: 'منتهى عبد الحميد عون', job_title: 'استاذ نظري', work_days: [1, 7], residence_text: null, work_hours_text: null, notes: null, phone_e164: null },
+    ]);
 
     const again = await runImport('doctor', file, false);
     expect(again.summary).toMatchObject({ created: 0, updated: 3 });
@@ -184,5 +191,38 @@ describe('doctors and university employees', () => {
     const client = await signIn(transport_number, transport_number);
     const { data } = await client.rpc('student_dashboard');
     expect((data as { student: Record<string, unknown> }).student).toMatchObject({ kind: 'employee', job_title: 'محاسبة' });
+  });
+});
+
+describe('doctor first login: transport number password, then the nearest stop', () => {
+  it('logs in with the transport number, must change it, then picks a library stop once', async () => {
+    const res = await createMember({ kind: 'doctor', full_name: 'طارق خالد عتر', job_title: 'محاضر في العيادات', work_days: [2] });
+    const { student_id, transport_number } = res.json() as { student_id: string; transport_number: string };
+    const client = await signIn(transport_number, transport_number);
+    const { data: profile } = await client.from('profiles').select('must_change_password').single();
+    expect(profile).toEqual({ must_change_password: true });
+
+    const stop = await service.from('stops').insert({ university_id: fx.universityId, name: 'دوار الشفاء للدكاترة' }).select('id').single();
+    const off = await service.from('stops').insert({ university_id: fx.universityId, name: 'نقطة موقوفة', is_active: false }).select('id').single();
+    const stopId = stop.data?.id as string;
+
+    expect((await client.rpc('complete_member_setup', { p_stop_id: off.data?.id })).error?.message).toBe('STOP_INVALID');
+    expect((await client.rpc('complete_member_setup', { p_stop_id: stopId })).error).toBeNull();
+    const { data: row } = await service.from('students').select('home_stop_id, setup_completed_at').eq('id', student_id).single();
+    expect(row?.home_stop_id).toBe(stopId);
+    expect(row?.setup_completed_at).toBeTruthy();
+    expect((await client.rpc('complete_member_setup', { p_stop_id: stopId })).error?.message).toBe('SETUP_LOCKED');
+
+    // deleting the stop from the library just clears the choice
+    await service.from('stops').delete().eq('id', stopId);
+    const { data: after } = await service.from('students').select('home_stop_id').eq('id', student_id).single();
+    expect(after?.home_stop_id).toBeNull();
+  });
+
+  it('students cannot use the doctor step', async () => {
+    const st = await createStudent(fx, { subscribe: false });
+    const client = await signIn(st.transportNumber, st.transportNumber);
+    const stop = await service.from('stops').insert({ university_id: fx.universityId, name: 'نقطة طالب' }).select('id').single();
+    expect((await client.rpc('complete_member_setup', { p_stop_id: stop.data?.id })).error?.message).toBe('FORBIDDEN');
   });
 });

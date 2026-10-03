@@ -34,6 +34,7 @@ type StudentFull = {
   work_days: number[];
   shift_start: string | null;
   job_title: string | null;
+  home_stop: { name: string } | null;
   work_hours_text: string | null;
   notes: string | null;
   photo_path: string | null;
@@ -84,7 +85,7 @@ export default function StudentDetailPage() {
         await supabase
           .from('students')
           .select(
-            'id, profile_id, university_id, transport_number, qr_token, full_name, kind, university_student_no, national_id, phone_e164, residence_text, area_other_text, work_days, shift_start, job_title, work_hours_text, notes, photo_path, is_active, colleges(name), area1:areas!students_area_primary_id_fkey(name), area2:areas!students_area_secondary_id_fkey(name), profiles(role, must_change_password)',
+            'id, profile_id, university_id, transport_number, qr_token, full_name, kind, university_student_no, national_id, phone_e164, residence_text, area_other_text, work_days, shift_start, job_title, home_stop:stops!students_home_stop_id_fkey(name), work_hours_text, notes, photo_path, is_active, colleges(name), area1:areas!students_area_primary_id_fkey(name), area2:areas!students_area_secondary_id_fkey(name), profiles(role, must_change_password)',
           )
           .eq('id', id)
           .single(),
@@ -230,6 +231,8 @@ export default function StudentDetailPage() {
                     <>
                       <dt className="text-muted">{t.student.jobTitle}</dt>
                       <dd>{st.job_title ?? t.common.none}</dd>
+                      <dt className="text-muted">{t.student.homeStop}</dt>
+                      <dd>{st.home_stop?.name ?? t.admin.members.stopPending}</dd>
                     </>
                   ) : (
                     <>

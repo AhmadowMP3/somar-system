@@ -82,6 +82,28 @@ export function usePackages(universityId: string | null | undefined) {
   });
 }
 
+export type StopOption = { id: string; name: string; areas: { name: string } | null };
+
+/** Active library stops of a university, for «nearest stop» dropdowns. */
+export function useStopOptions(universityId: string | null | undefined) {
+  return useQuery({
+    queryKey: ['stop-options', universityId],
+    enabled: Boolean(universityId),
+    queryFn: async () =>
+      unwrap(
+        await supabase
+          .from('stops')
+          .select('id, name, areas(name)')
+          .eq('university_id', universityId as string)
+          .eq('is_active', true)
+          .order('name'),
+      ) as unknown as StopOption[],
+  });
+}
+
+/** «دوار الشفاء — الحمدانية» */
+export const stopLabel = (s: StopOption) => (s.areas?.name && s.areas.name !== s.name ? `${s.name} — ${s.areas.name}` : s.name);
+
 export function ActiveBadge({ active }: { active: boolean }) {
   return <Badge tone={active ? 'success' : 'neutral'}>{active ? t.common.active : t.common.inactive}</Badge>;
 }

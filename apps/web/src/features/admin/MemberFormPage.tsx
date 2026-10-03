@@ -9,7 +9,7 @@ import { t } from '@/i18n/ar';
 import { api } from '@/lib/api';
 import { errorMessage } from '@/lib/errors';
 import { supabase, unwrap } from '@/lib/supabase';
-import { DayToggles, useAreas, WithUniversity } from './common';
+import { DayToggles, stopLabel, useAreas, useStopOptions, WithUniversity } from './common';
 import { memberPath } from './MembersPage';
 
 type FormState = {
@@ -18,6 +18,7 @@ type FormState = {
   job_title: string;
   residence_text: string;
   area_primary_id: string;
+  home_stop_id: string;
   work_days: number[];
   work_hours_text: string;
   notes: string;
@@ -29,6 +30,7 @@ const EMPTY: FormState = {
   job_title: '',
   residence_text: '',
   area_primary_id: '',
+  home_stop_id: '',
   work_days: [],
   work_hours_text: '',
   notes: '',
@@ -42,6 +44,7 @@ type Existing = {
   job_title: string | null;
   residence_text: string | null;
   area_primary_id: string | null;
+  home_stop_id: string | null;
   work_days: number[];
   work_hours_text: string | null;
   notes: string | null;
@@ -56,7 +59,7 @@ export default function MemberFormPage({ kind }: { kind: MemberKind }) {
       unwrap(
         await supabase
           .from('students')
-          .select('id, university_id, full_name, phone_e164, job_title, residence_text, area_primary_id, work_days, work_hours_text, notes')
+          .select('id, university_id, full_name, phone_e164, job_title, residence_text, area_primary_id, home_stop_id, work_days, work_hours_text, notes')
           .eq('id', id as string)
           .single(),
       ) as Existing,
@@ -75,6 +78,7 @@ export default function MemberFormPage({ kind }: { kind: MemberKind }) {
             job_title: m.job_title ?? '',
             residence_text: m.residence_text ?? '',
             area_primary_id: m.area_primary_id ?? '',
+            home_stop_id: m.home_stop_id ?? '',
             work_days: m.work_days,
             work_hours_text: m.work_hours_text ?? '',
             notes: m.notes ?? '',
@@ -92,9 +96,10 @@ function MemberForm({ kind, universityId, memberId, initial }: { kind: MemberKin
   const qc = useQueryClient();
   const toast = useToast();
   const areas = useAreas(universityId);
+  const stops = useStopOptions(universityId);
   const [form, setForm] = useState<FormState>(initial);
   const [touched, setTouched] = useState(false);
-  const ids = { name: useId(), phone: useId(), job: useId(), area: useId(), hours: useId(), residence: useId(), notes: useId() };
+  const ids = { name: useId(), phone: useId(), job: useId(), area: useId(), stop: useId(), hours: useId(), residence: useId(), notes: useId() };
 
   const name = checkFullName(form.full_name);
   const phone = form.phone.trim() ? normalizePhone(form.phone) : null;
@@ -111,6 +116,7 @@ function MemberForm({ kind, universityId, memberId, initial }: { kind: MemberKin
         job_title: form.job_title.trim() || null,
         residence_text: form.residence_text.trim() || null,
         area_primary_id: form.area_primary_id || null,
+        home_stop_id: form.home_stop_id || null,
         work_days: form.work_days,
         work_hours_text: form.work_hours_text.trim() || null,
         notes: form.notes.trim() || null,
@@ -170,6 +176,16 @@ function MemberForm({ kind, universityId, memberId, initial }: { kind: MemberKin
               {(areas.data ?? []).map((a) => (
                 <option key={a.id} value={a.id}>
                   {a.name}
+                </option>
+              ))}
+            </Select>
+          </Field>
+          <Field label={t.student.homeStop} htmlFor={ids.stop} hint={m.stopHint}>
+            <Select id={ids.stop} value={form.home_stop_id} onChange={(e) => set({ home_stop_id: e.target.value })} data-testid="member-stop">
+              <option value="">{m.stopPending}</option>
+              {(stops.data ?? []).map((s) => (
+                <option key={s.id} value={s.id}>
+                  {stopLabel(s)}
                 </option>
               ))}
             </Select>

@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import { arShared } from './i18n/ar.js';
 import { parseTimestampCell, type ImportRowStatus, type ImportSummary } from './importing.js';
-import { checkFullName, normalizePhone, parseWorkDays } from './normalize.js';
+import { checkFullName, parseWorkDays } from './normalize.js';
 import { foldArabic, normalizeText, similarity } from './text.js';
 
 /**
@@ -26,7 +26,11 @@ export const memberInputSchema = z.object({
 });
 export type MemberInput = z.infer<typeof memberInputSchema>;
 
-/** Known column titles per field (Google Forms exports); matched exactly first, then by similarity. */
+/**
+ * Known column titles per field (Google Forms exports); matched exactly first, then by similarity.
+ * Owner's choice: only name, job and work days are imported; every other column (residence, hours,
+ * notes…) is ignored. The nearest stop is chosen by the doctor at first login.
+ */
 export const MEMBER_IMPORT_FIELDS = [
   { key: 'timestamp', headers: ['Timestamp', 'الطابع الزمني'], required: false },
   {
@@ -34,12 +38,8 @@ export const MEMBER_IMPORT_FIELDS = [
     headers: ['اسم الدكتور الثلاثي', 'اسم الموظف الثلاثي', 'الاسم الثلاثي', 'الاسم الكامل', 'الاسم', 'اسم الدكتور', 'اسم الموظف'],
     required: true,
   },
-  { key: 'phone', headers: ['رقم الهاتف', 'الهاتف', 'رقم الموبايل', 'رقم الجوال', 'رقم الواتس', 'الموبايل'], required: false },
   { key: 'job_title', headers: ['المهنة', 'الوظيفة', 'المسمى الوظيفي', 'القسم', 'الصفة'], required: false },
-  { key: 'residence', headers: ['مكان السكن', 'السكن', 'العنوان'], required: false },
   { key: 'work_days', headers: ['ايام الدوام', 'أيام الدوام', 'اختر أيام دوامك بالاسبوع'], required: false },
-  { key: 'work_hours', headers: ['مواعيد الدوام', 'ساعات الدوام', 'وقت الدوام', 'متى يبدأ دوامك'], required: false },
-  { key: 'notes', headers: ['ملاحظات اضافية او نصائح', 'ملاحظات'], required: false },
 ] as const;
 
 export type MemberFieldKey = (typeof MEMBER_IMPORT_FIELDS)[number]['key'];
@@ -84,33 +84,11 @@ export function memberNameKey(name: unknown): string {
     .replace(/[\s.]/g, '');
 }
 
-const pad = (n: number) => String(n).padStart(2, '0');
-
-/** Free-text work hours; Excel time cells become HH:MM, date cells DD/MM/YYYY. */
-export function formatWorkHours(value: unknown): string | null {
-  // SheetJS (cellDates) builds dates in the server's local time zone.
-  if (value instanceof Date && !Number.isNaN(value.getTime())) {
-    if (value.getFullYear() < 1901) return `${pad(value.getHours())}:${pad(value.getMinutes())}`;
-    return `${pad(value.getDate())}/${pad(value.getMonth() + 1)}/${value.getFullYear()}`;
-  }
-  if (typeof value === 'number' && Number.isFinite(value)) {
-    const minutes = Math.round((value % 1) * 1440);
-    if (value >= 0 && value < 1) return `${pad(Math.floor(minutes / 60) % 24)}:${pad(minutes % 60)}`;
-    const d = new Date(Math.round((Math.floor(value) - 25569) * 86_400_000));
-    return `${pad(d.getUTCDate())}/${pad(d.getUTCMonth() + 1)}/${d.getUTCFullYear()}`;
-  }
-  return normalizeText(value) || null;
-}
-
 export type NormalizedMemberRow = {
   timestamp: number;
   full_name: string;
-  phone_e164: string | null;
   job_title: string | null;
-  residence_text: string | null;
   work_days: number[];
-  work_hours_text: string | null;
-  notes: string | null;
 };
 
 export type MemberRowResult = {
@@ -123,8 +101,6 @@ export type MemberRowResult = {
   data: NormalizedMemberRow | null;
 };
 
-const EMPTY_NOTES = new Set(['لا يوجد', 'لايوجد', 'لا', 'لا شيء', '-'].map(foldArabic));
-
 export function normalizeMemberRow(rowNumber: number, raw: Partial<Record<MemberFieldKey, unknown>>): MemberRowResult {
   const t = arShared.import;
   const reasons: string[] = [];
@@ -133,13 +109,6 @@ export function normalizeMemberRow(rowNumber: number, raw: Partial<Record<Member
   const name = checkFullName(raw.full_name);
   if (!name.ok) reasons.push(name.reason === 'empty' ? t.NAME_REQUIRED : t.NAME_TOO_SHORT);
 
-  let phone: string | null = null;
-  if (normalizeText(raw.phone)) {
-    const p = normalizePhone(raw.phone);
-    if (p.ok) phone = p.value;
-    else warnings.push(t.PHONE_INVALID);
-  }
-
   let days: number[] = [];
   if (normalizeText(raw.work_days)) {
     const d = parseWorkDays(raw.work_days);
@@ -147,7 +116,6 @@ export function normalizeMemberRow(rowNumber: number, raw: Partial<Record<Member
     else warnings.push(d.reason === 'empty' ? t.WORK_DAYS_EMPTY : t.WORK_DAYS_UNKNOWN + (d.token ?? ''));
   }
 
-  const notes = normalizeText(raw.notes);
   const fullName = name.ok ? name.value : normalizeText(raw.full_name);
   const base = { row_number: rowNumber, full_name: fullName, name_key: memberNameKey(fullName), warnings };
   if (!name.ok) return { ...base, status: 'rejected', reasons, data: null };
@@ -158,12 +126,8 @@ export function normalizeMemberRow(rowNumber: number, raw: Partial<Record<Member
     data: {
       timestamp: parseTimestampCell(raw.timestamp),
       full_name: name.value,
-      phone_e164: phone,
       job_title: normalizeText(raw.job_title) || null,
-      residence_text: normalizeText(raw.residence) || null,
       work_days: days,
-      work_hours_text: formatWorkHours(raw.work_hours),
-      notes: notes && !EMPTY_NOTES.has(foldArabic(notes)) ? notes : null,
     },
   };
 }
