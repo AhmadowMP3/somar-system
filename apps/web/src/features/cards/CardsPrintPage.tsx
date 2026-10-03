@@ -2,7 +2,7 @@ import { useQuery } from '@tanstack/react-query';
 import { ArrowRight, Printer } from 'lucide-react';
 import { useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { CardFace, toDataUri } from '@/components/StudentCard';
+import { cardVariant, CardFace, toDataUri, type CardVariant } from '@/components/StudentCard';
 import { Button, Select } from '@/components/ui/primitives';
 import { EmptyState, ErrorState, ListSkeleton } from '@/components/ui/states';
 import { t } from '@/i18n/ar';
@@ -10,6 +10,7 @@ import { PHOTO_BUCKET, signedUrl, supabase, unwrap } from '@/lib/supabase';
 
 type CardData = {
   id: string;
+  variant: CardVariant;
   full_name: string;
   transport_number: string;
   qr_token: string;
@@ -54,6 +55,7 @@ async function loadCards(params: URLSearchParams): Promise<CardData[]> {
   return Promise.all(
     students.map(async (s) => ({
       id: s.id,
+      variant: cardVariant(s.kind),
       full_name: s.full_name,
       transport_number: s.transport_number,
       qr_token: s.qr_token,
@@ -70,7 +72,7 @@ const PRINT_CSS = {
 };
 
 function TransportCard({ card }: { card: CardData }) {
-  return <CardFace card={card} style={{ width: '85.6mm', height: '54mm' }} />;
+  return <CardFace card={card} style={{ width: '85.6mm' }} />;
 }
 
 function chunk<T>(items: T[], size: number): T[][] {

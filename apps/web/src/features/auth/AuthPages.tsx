@@ -48,7 +48,7 @@ function PasswordInput({ id, value, onChange, autoComplete }: {
         id={id}
         type={show ? 'text' : 'password'}
         dir="ltr"
-        className="pe-12 text-start"
+        className="ps-12 text-start"
         value={value}
         autoComplete={autoComplete}
         onChange={(e) => onChange(e.target.value)}

@@ -240,7 +240,7 @@ test('6. student routes: outbound above return; a stop opens with the stored Goo
   await service.from('routes').delete().eq('id', ret?.id as string);
 });
 
-const CREDIT = 'This System is made by Trinode';
+const CREDIT = 'This System is made by Enjazwork';
 
 /** Latin words allowed in the UI: product/format names and data values (codes, numbers). */
 const ALLOWED_LATIN = new Set(['QR', 'PDF', 'Excel', 'xlsx', 'JPEG', 'PNG', 'WEBP', 'iPhone', 'Safari', 'OpenStreetMap']);

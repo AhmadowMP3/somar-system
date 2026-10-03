@@ -12,7 +12,7 @@ export const t = {
   listSeparator: '، ',
   currency: 'دولار',
   /** Vendor credit shown at the bottom of every screen (kept in English on the owner's request). */
-  poweredBy: 'This System is made by Trinode',
+  poweredBy: 'This System is made by Enjazwork',
   brand: 'سومر تورز',
 
   common: {
@@ -663,6 +663,7 @@ export const t = {
       needsMapping: 'بحاجة ربط منطقة',
     },
     exportNames: 'تصدير الأسماء وأرقام النقل',
+    exportPdf: 'تصدير PDF',
     exportNamesFile: { student: 'الطلاب-وأرقام-النقل', doctor: 'الدكاترة-وأرقام-النقل', employee: 'الموظفون-وأرقام-النقل' },
     members: {
       doctor: {
@@ -983,6 +984,14 @@ export const t = {
         'university.delete': 'حذف جامعة',
       } as Record<string, string>,
     },
+  },
+
+  roster: {
+    title: { student: 'قائمة الطلاب وأرقام النقل', doctor: 'قائمة الدكاترة وأرقام النقل', employee: 'قائمة موظفي الجامعة وأرقام النقل' },
+    count: (n: number) => `العدد: ${n}`,
+    date: 'تاريخ الإصدار',
+    savePdf: 'حفظ PDF / طباعة',
+    empty: 'لا يوجد أحد في هذه القائمة بعد',
   },
 
   cards: {

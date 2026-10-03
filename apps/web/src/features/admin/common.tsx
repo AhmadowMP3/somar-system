@@ -105,8 +105,10 @@ export function useStopOptions(universityId: string | null | undefined) {
 /** «دوار الشفاء — الحمدانية» */
 export const stopLabel = (s: StopOption) => (s.areas?.name && s.areas.name !== s.name ? `${s.name} — ${s.areas.name}` : s.name);
 
+export type RiderKind = 'student' | 'doctor' | 'employee';
+
 /** Every rider of one kind with name and transport number (paged: the API returns at most 1000 rows). */
-export async function exportNamesAndNumbers(universityId: string, kind: 'student' | 'doctor' | 'employee', fileName: string) {
+export async function fetchRiderNames(universityId: string, kind: RiderKind) {
   const all: { full_name: string; transport_number: string }[] = [];
   for (let from = 0; ; from += 1000) {
     const page = unwrap(
@@ -121,6 +123,12 @@ export async function exportNamesAndNumbers(universityId: string, kind: 'student
     all.push(...page);
     if (page.length < 1000) break;
   }
+  return all;
+}
+
+/** The names and transport numbers as an Excel file. */
+export async function exportNamesAndNumbers(universityId: string, kind: RiderKind, fileName: string) {
+  const all = await fetchRiderNames(universityId, kind);
   exportSheet(fileName, all.map((r) => ({ [t.common.name]: r.full_name, [t.student.transportNumber]: r.transport_number })));
   return all.length;
 }

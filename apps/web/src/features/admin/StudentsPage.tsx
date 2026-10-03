@@ -1,7 +1,8 @@
 import { useQuery } from '@tanstack/react-query';
-import { Download, Plus, Printer, Search } from 'lucide-react';
+import { Download, FileSpreadsheet, FileText, Plus, Printer, Search } from 'lucide-react';
 import { useId, useMemo, useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
+import { useAuth } from '@/app/auth';
 import { Badge, Button, Input, Select } from '@/components/ui/primitives';
 import { DataList, EmptyState, PageHeader, QueryState } from '@/components/ui/states';
 import { t } from '@/i18n/ar';
@@ -40,6 +41,7 @@ export default function StudentsPage() {
 const FILTER_KEYS = ['q', 'college', 'package', 'area', 'day', 'balance', 'photo', 'active'] as const;
 
 function StudentsBody({ universityId }: { universityId: string }) {
+  const { can } = useAuth();
   const s = t.admin.students;
   const f = s.filters;
   const navigate = useNavigate();
@@ -122,9 +124,23 @@ function StudentsBody({ universityId }: { universityId: string }) {
                 {s.printCards}
               </Link>
             </Button>
+            {can('import') ? (
+              <Button asChild data-testid="students-import">
+                <Link to="/admin/import">
+                  <FileSpreadsheet className="h-4 w-4" aria-hidden />
+                  {t.admin.members.import}
+                </Link>
+              </Button>
+            ) : null}
             <Button onClick={() => void exportNamesAndNumbers(universityId, 'student', t.admin.exportNamesFile.student)} data-testid="export-names">
               <Download className="h-4 w-4" aria-hidden />
               {t.admin.exportNames}
+            </Button>
+            <Button asChild data-testid="export-pdf">
+              <Link to={`/admin/roster?university=${universityId}&kind=student`}>
+                <FileText className="h-4 w-4" aria-hidden />
+                {t.admin.exportPdf}
+              </Link>
             </Button>
             <Button asChild variant="secondary">
               <Link to="/admin/students/new">

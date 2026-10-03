@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Download, FileSpreadsheet, Plus, Printer, Search } from 'lucide-react';
+import { Download, FileSpreadsheet, FileText, Plus, Printer, Search } from 'lucide-react';
 import { useId, useMemo, useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import type { ImportSummary, MemberKind } from '@somar/shared';
@@ -102,6 +102,12 @@ function MembersBody({ kind, universityId }: { kind: MemberKind; universityId: s
             <Button onClick={() => void exportNamesAndNumbers(universityId, kind, t.admin.exportNamesFile[kind])} data-testid="export-names">
               <Download className="h-4 w-4" aria-hidden />
               {t.admin.exportNames}
+            </Button>
+            <Button asChild data-testid="export-pdf">
+              <Link to={`/admin/roster?university=${universityId}&kind=${kind}`}>
+                <FileText className="h-4 w-4" aria-hidden />
+                {t.admin.exportPdf}
+              </Link>
             </Button>
             <Button onClick={() => setImportOpen(true)} data-testid="member-import">
               <FileSpreadsheet className="h-4 w-4" aria-hidden />

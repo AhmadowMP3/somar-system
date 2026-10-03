@@ -22,7 +22,7 @@ import { useAuth } from '@/app/auth';
 import { DirectionBadge } from '@/components/common';
 import { QrCode } from '@/components/QrCode';
 import { RouteMap } from '@/components/RouteMap';
-import { CardFace, downloadCard, toDataUri, type CardValues } from '@/components/StudentCard';
+import { cardVariant, CardFace, downloadCard, toDataUri, type CardValues } from '@/components/StudentCard';
 import { PickupHomeCard } from './PickupPage';
 import { Dialog, useToast } from '@/components/ui/overlay';
 import { Badge, Button, Card, CardTitle, Field, Select, Skeleton } from '@/components/ui/primitives';
@@ -223,6 +223,7 @@ function MyCard({ student }: { student: Dashboard['student'] }) {
     staleTime: 5 * 60_000,
   });
   const card: CardValues = {
+    variant: cardVariant(student.kind),
     full_name: student.full_name,
     transport_number: student.transport_number,
     college: student.college ?? student.job_title ?? (student.kind ? (t.student.kind[student.kind] ?? '') : ''),
@@ -236,7 +237,7 @@ function MyCard({ student }: { student: Dashboard['student'] }) {
   });
   return (
     <div className="space-y-4">
-      {photo.isLoading ? <Skeleton className="aspect-[1034/652] w-full" /> : <CardFace card={card} className="w-full shadow-md" />}
+      {photo.isLoading ? <Skeleton className={cardVariant(student.kind) === 'doctor' ? 'aspect-[1230/749] w-full' : 'aspect-[1034/652] w-full'} /> : <CardFace card={card} className="w-full shadow-md" />}
       <Button
         variant="primary"
         size="lg"

@@ -88,6 +88,12 @@
 }
 
 @layer base {
+  /* Edge/IE draw their own password-reveal and clear buttons; the app has its own eye button */
+  input::-ms-reveal,
+  input::-ms-clear {
+    display: none;
+  }
+
   html {
     -webkit-tap-highlight-color: transparent;
     font-variant-numeric: lining-nums;

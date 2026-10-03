@@ -4,46 +4,73 @@ import { t } from '@/i18n/ar';
 import { cn } from '@/lib/utils';
 import { QrCode } from './QrCode';
 
-/** The owner's card design (public/card/template.jpg), cropped to the card edges. */
-export const CARD_TEMPLATE = '/card/template.jpg';
-const W = 1034;
-const H = 652;
+type Box = { x: number; y: number; w: number; h: number };
+type Template = { src: string; W: number; H: number; box: { photo: Box & { r: number }; name: Box; number: Box; college: Box; qr: Box } };
 
-/** Where each value goes on the template, in template pixels. */
-const BOX = {
-  photo: { x: 50, y: 250, w: 228, h: 295, r: 10 },
-  name: { x: 313, y: 300, w: 387, h: 45 },
-  number: { x: 313, y: 400, w: 387, h: 46 },
-  college: { x: 313, y: 500, w: 387, h: 47 },
-  qr: { x: 829, y: 331, w: 138, h: 138 },
-} as const;
+/**
+ * The owner's card designs, cropped to the card edges; boxes are where each value goes, in template
+ * pixels. Students: name / transport number / college. Doctors: name / transport number / profession.
+ */
+const TEMPLATES: Record<CardVariant, Template> = {
+  student: {
+    src: '/card/template.jpg',
+    W: 1034,
+    H: 652,
+    box: {
+      photo: { x: 50, y: 250, w: 228, h: 295, r: 10 },
+      name: { x: 313, y: 300, w: 387, h: 45 },
+      number: { x: 313, y: 400, w: 387, h: 46 },
+      college: { x: 313, y: 500, w: 387, h: 47 },
+      qr: { x: 829, y: 331, w: 138, h: 138 },
+    },
+  },
+  doctor: {
+    src: '/card/doctor-template.jpg',
+    W: 1230,
+    H: 749,
+    box: {
+      photo: { x: 60, y: 290, w: 272, h: 334, r: 12 },
+      name: { x: 373, y: 344, w: 462, h: 53 },
+      number: { x: 373, y: 458, w: 462, h: 53 },
+      college: { x: 373, y: 576, w: 462, h: 53 },
+      qr: { x: 995, y: 390, w: 140, h: 140 },
+    },
+  },
+};
 
 const INK = '#16181c';
 const RED = '#b0121d';
 const FONT = '"Cairo Variable", "Segoe UI", Tahoma, sans-serif';
 
+export type CardVariant = 'student' | 'doctor';
+
+/** Doctors have their own card design; students and university employees use the student one. */
+export const cardVariant = (kind: string | null | undefined): CardVariant => (kind === 'doctor' ? 'doctor' : 'student');
+
 export type CardValues = {
+  variant?: CardVariant;
   full_name: string;
   transport_number: string;
+  /** College, or a doctor's / employee's profession. */
   college: string;
   qr_token: string;
   /** Data URI or URL of the student's photo. */
   photo: string | null;
 };
 
-function pos(b: { x: number; y: number; w: number; h: number }) {
+function pos(tpl: Template, b: Box) {
   return {
-    left: `${(b.x / W) * 100}%`,
-    top: `${(b.y / H) * 100}%`,
-    width: `${(b.w / W) * 100}%`,
-    height: `${(b.h / H) * 100}%`,
+    left: `${(b.x / tpl.W) * 100}%`,
+    top: `${(b.y / tpl.H) * 100}%`,
+    width: `${(b.w / tpl.W) * 100}%`,
+    height: `${(b.h / tpl.H) * 100}%`,
   };
 }
 
 /** Font size (as a share of the card width) that keeps `text` on one line inside a value box. */
-function fitSize(text: string, max: number): number {
+function fitSize(tpl: Template, text: string, max: number): number {
   const perChar = 0.5; // average Cairo advance, in em
-  const room = (BOX.name.w / W) * 100 * 0.92;
+  const room = (tpl.box.name.w / tpl.W) * 100 * 0.92;
   return Math.min(max, room / Math.max(1, text.length * perChar));
 }
 
@@ -52,27 +79,30 @@ function fitSize(text: string, max: number): number {
  * (container query units), so the same markup serves the phone preview and the 85.6 × 54 mm print.
  */
 export function CardFace({ card, className, style }: { card: CardValues; className?: string; style?: React.CSSProperties }) {
+  const tpl = TEMPLATES[card.variant ?? 'student'];
+  const box = tpl.box;
   const text = 'absolute flex items-center justify-center overflow-hidden whitespace-nowrap px-[1.5cqw] font-extrabold leading-none';
   return (
     <article
       className={cn('transport-card relative select-none overflow-hidden rounded-[3.5cqw] bg-white', className)}
-      style={{ aspectRatio: `${W} / ${H}`, containerType: 'inline-size', ...style }}
+      style={{ aspectRatio: `${tpl.W} / ${tpl.H}`, containerType: 'inline-size', ...style }}
       data-testid="transport-card"
+      data-variant={card.variant ?? 'student'}
     >
-      <img src={CARD_TEMPLATE} alt="" className="absolute inset-0 h-full w-full" draggable={false} />
-      <div className="absolute overflow-hidden rounded-[1cqw] bg-[#e4e4e7]" style={pos(BOX.photo)}>
+      <img src={tpl.src} alt="" className="absolute inset-0 h-full w-full" draggable={false} />
+      <div className="absolute overflow-hidden rounded-[1cqw] bg-[#e4e4e7]" style={pos(tpl, box.photo)}>
         {card.photo ? <img src={card.photo} alt="" className="h-full w-full object-cover" data-testid="card-photo" /> : null}
       </div>
-      <p className={text} style={{ ...pos(BOX.name), color: INK, fontSize: `${fitSize(card.full_name, 3.6)}cqw` }}>
+      <p className={text} style={{ ...pos(tpl, box.name), color: INK, fontSize: `${fitSize(tpl, card.full_name, 3.6)}cqw` }}>
         {card.full_name}
       </p>
-      <p className={cn(text, 'num tracking-wider')} dir="ltr" style={{ ...pos(BOX.number), color: RED, fontSize: '4.2cqw' }}>
+      <p className={cn(text, 'num tracking-wider')} dir="ltr" style={{ ...pos(tpl, box.number), color: RED, fontSize: '4.2cqw' }}>
         {card.transport_number}
       </p>
-      <p className={text} style={{ ...pos(BOX.college), color: INK, fontSize: `${fitSize(card.college, 3.2)}cqw` }}>
+      <p className={text} style={{ ...pos(tpl, box.college), color: INK, fontSize: `${fitSize(tpl, card.college, 3.2)}cqw` }}>
         {card.college}
       </p>
-      <div className="absolute" style={pos(BOX.qr)}>
+      <div className="absolute bg-white" style={pos(tpl, box.qr)}>
         <QrCode token={card.qr_token} className="h-full w-full" label={card.transport_number} />
       </div>
     </article>
@@ -117,8 +147,10 @@ function roundRect(ctx: CanvasRenderingContext2D, x: number, y: number, w: numbe
   ctx.closePath();
 }
 
-/** Renders the card to a PNG (2068 × 1304 px, about 600 dpi at card size). */
+/** Renders the card to a PNG (twice the template size, about 600 dpi at card size). */
 export async function renderCardPng(card: CardValues): Promise<Blob> {
+  const tpl = TEMPLATES[card.variant ?? 'student'];
+  const { W, H, box: BOX } = tpl;
   const k = 2;
   const canvas = document.createElement('canvas');
   canvas.width = W * k;
@@ -130,7 +162,7 @@ export async function renderCardPng(card: CardValues): Promise<Blob> {
     () => undefined,
   );
 
-  ctx.drawImage(await loadImage(CARD_TEMPLATE), 0, 0, W, H);
+  ctx.drawImage(await loadImage(tpl.src), 0, 0, W, H);
 
   const p = BOX.photo;
   ctx.save();
@@ -149,7 +181,7 @@ export async function renderCardPng(card: CardValues): Promise<Blob> {
   }
   ctx.restore();
 
-  const write = (value: string, b: { x: number; y: number; w: number; h: number }, color: string, max: number, dir: CanvasDirection) => {
+  const write = (value: string, b: Box, color: string, max: number, dir: CanvasDirection) => {
     let size = max;
     ctx.direction = dir;
     ctx.font = `800 ${size}px ${FONT}`;
