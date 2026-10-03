@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { arShared, dedupeImportRows, normalizeImportRow, normalizeNationalId, summarizeImport, type ImportContext } from '../src/index.js';
+import { arShared, dedupeImportRows, normalizeImportRow, normalizeNationalId, parseAmount, summarizeImport, type ImportContext } from '../src/index.js';
 
 const ctx: ImportContext = {
   colleges: [{ id: 'c1', name: 'كلية طب الاسنان' }],
@@ -34,9 +34,9 @@ describe('import row normalization', () => {
     expect(r2.data).toMatchObject({ area_primary_id: 'a1', area_secondary_id: 'a2', area_other_text: null });
   });
   it('rejects with Arabic reasons', () => {
-    const r = normalizeImportRow(3, { ...base, university_student_no: 'دد', national_id: '' }, ctx);
+    const r = normalizeImportRow(3, { ...base, university_student_no: 'دد', national_id: 'abc' }, ctx);
     expect(r.status).toBe('rejected');
-    expect(r.reasons).toEqual([arShared.import.STUDENT_NO_INVALID, arShared.import.NATIONAL_ID_REQUIRED]);
+    expect(r.reasons).toEqual([arShared.import.STUDENT_NO_INVALID, arShared.import.NATIONAL_ID_INVALID]);
   });
   it('needs only name, university number and national number; the rest is asked at first login', () => {
     const r = normalizeImportRow(4, { full_name: base.full_name, university_student_no: '1', national_id: '02010045678' }, ctx);
@@ -66,13 +66,46 @@ describe('national number', () => {
     expect(normalizeNationalId('12345').ok).toBe(false);
     expect(normalizeNationalId('02A10045678').ok).toBe(false);
   });
-  it('is required and read from the sheet; missing or invalid → rejected', () => {
+  it('is read from the sheet; missing → imported with a warning (password = transport number), invalid → rejected', () => {
     expect(normalizeImportRow(2, base, ctx).data?.national_id).toBe('02010045678');
     const missing = normalizeImportRow(2, { ...base, national_id: '' }, ctx);
-    expect(missing.status).toBe('rejected');
-    expect(missing.reasons).toContain(arShared.import.NATIONAL_ID_REQUIRED);
+    expect(missing.status).toBe('created');
+    expect(missing.data?.national_id).toBeNull();
+    expect(missing.warnings).toContain(arShared.import.NATIONAL_ID_MISSING);
     const bad = normalizeImportRow(2, { ...base, national_id: 'abc' }, ctx);
     expect(bad.status).toBe('rejected');
     expect(bad.reasons).toContain(arShared.import.NATIONAL_ID_INVALID);
+  });
+});
+
+describe('package from «مبلغ الشريحة»', () => {
+  const withPackages: ImportContext = {
+    ...ctx,
+    packages: [
+      { id: 'p2', name: 'باقة يومين', price: '125.00' },
+      { id: 'p3', name: 'باقة 3 أيام', price: 175 },
+      { id: 'p5', name: 'باقة 5 أيام', price: '205.00' },
+    ],
+  };
+  it('parses amounts written in many ways', () => {
+    expect(parseAmount(205)).toBe(205);
+    expect(parseAmount('٢٠٥')).toBe(205);
+    expect(parseAmount('205 $')).toBe(205);
+    expect(parseAmount('')).toBeNull();
+    expect(parseAmount(null)).toBeNull();
+  });
+  it('picks the package whose price equals the amount', () => {
+    const r = normalizeImportRow(2, { ...base, package_price: 175 }, withPackages);
+    expect(r.data?.package_id).toBe('p3');
+    expect(r.package_name).toBe('باقة 3 أيام');
+  });
+  it('no amount or an unknown amount → imported without a package, with a warning', () => {
+    const none = normalizeImportRow(2, base, withPackages);
+    expect(none.status).toBe('created');
+    expect(none.data?.package_id).toBeNull();
+    expect(none.warnings).toContain(arShared.import.PACKAGE_NO_AMOUNT);
+    const odd = normalizeImportRow(2, { ...base, package_price: 150 }, withPackages);
+    expect(odd.data?.package_id).toBeNull();
+    expect(odd.warnings).toContain(arShared.import.PACKAGE_UNKNOWN(150));
   });
 });

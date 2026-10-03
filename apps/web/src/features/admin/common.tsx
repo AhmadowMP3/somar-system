@@ -5,6 +5,7 @@ import { useAuth, useScope } from '@/app/auth';
 import { Badge, Button } from '@/components/ui/primitives';
 import { EmptyState, ListSkeleton } from '@/components/ui/states';
 import { t } from '@/i18n/ar';
+import { exportSheet } from '@/lib/exportSheet';
 import { supabase, unwrap } from '@/lib/supabase';
 
 export type Named = { id: string; name: string; is_active: boolean };
@@ -103,6 +104,26 @@ export function useStopOptions(universityId: string | null | undefined) {
 
 /** «دوار الشفاء — الحمدانية» */
 export const stopLabel = (s: StopOption) => (s.areas?.name && s.areas.name !== s.name ? `${s.name} — ${s.areas.name}` : s.name);
+
+/** Every rider of one kind with name and transport number (paged: the API returns at most 1000 rows). */
+export async function exportNamesAndNumbers(universityId: string, kind: 'student' | 'doctor' | 'employee', fileName: string) {
+  const all: { full_name: string; transport_number: string }[] = [];
+  for (let from = 0; ; from += 1000) {
+    const page = unwrap(
+      await supabase
+        .from('students')
+        .select('full_name, transport_number')
+        .eq('university_id', universityId)
+        .eq('kind', kind)
+        .order('transport_number')
+        .range(from, from + 999),
+    ) as { full_name: string; transport_number: string }[];
+    all.push(...page);
+    if (page.length < 1000) break;
+  }
+  exportSheet(fileName, all.map((r) => ({ [t.common.name]: r.full_name, [t.student.transportNumber]: r.transport_number })));
+  return all.length;
+}
 
 export function ActiveBadge({ active }: { active: boolean }) {
   return <Badge tone={active ? 'success' : 'neutral'}>{active ? t.common.active : t.common.inactive}</Badge>;

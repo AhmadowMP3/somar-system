@@ -340,8 +340,8 @@ describe('national number as the initial password', () => {
     ]);
     const res = await app.inject({ method: 'POST', url: '/api/students/import', headers: { ...body.headers, ...auth(adminToken) }, payload: body.payload });
     expect(res.statusCode, res.body).toBe(200);
-    // the national number is required now: the row without it is rejected
-    expect((res.json() as { summary: { created: number; rejected: number } }).summary).toMatchObject({ created: 1, rejected: 1 });
+    // a row without a national number is imported too: its first password is the transport number
+    expect((res.json() as { summary: { created: number; rejected: number } }).summary).toMatchObject({ created: 2, rejected: 0 });
 
     const { data: rows } = await service
       .from('students')
@@ -349,15 +349,84 @@ describe('national number as the initial password', () => {
       .eq('university_id', fx.universityId)
       .in('university_student_no', [no, no2]);
     const withId = rows?.find((r) => r.university_student_no === no) as { id: string; transport_number: string; national_id: string };
-    expect(rows?.some((r) => r.university_student_no === no2)).toBe(false);
+    const without = rows?.find((r) => r.university_student_no === no2) as { transport_number: string; national_id: string | null };
     expect(withId.national_id).toBe('02010045678');
+    expect(without.national_id).toBeNull();
     await signIn(withId.transport_number, '02010045678');
     await expect(signIn(withId.transport_number, withId.transport_number)).rejects.toThrow();
+    await signIn(without.transport_number, without.transport_number);
 
     const { data: profile } = await service.from('students').select('profile_id').eq('id', withId.id).single();
     await service.auth.admin.updateUserById((profile as { profile_id: string }).profile_id, { password: 'Changed@123' });
     const reset = await app.inject({ method: 'POST', url: `/api/students/${withId.id}/reset-password`, headers: auth(adminToken) });
     expect(reset.statusCode).toBe(200);
     await signIn(withId.transport_number, '02010045678');
+  });
+});
+
+describe('package from «مبلغ الشريحة»', () => {
+  it('assigns the package whose price matches; a re-import keeps an existing package', async () => {
+    await service.from('packages').update({ price: 205 }).eq('id', fx.packageId);
+    const { data: three } = await service
+      .from('packages')
+      .insert({ university_id: fx.universityId, name: 'باقة 3 أيام اختبار', trips_per_week: 3, price: 175, semester_start: '2026-10-03', semester_end: '2027-02-06' })
+      .select('id')
+      .single();
+    const base = 600000000 + Math.floor(Math.random() * 1e7);
+    const nos = [String(base), String(base + 1), String(base + 2)];
+    const sheetOf = (amounts: unknown[]) => {
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(
+        wb,
+        XLSX.utils.aoa_to_sheet([
+          ['الرقم جامعي', 'الاسم الثلاثي', 'الرقم الوطني', 'مبلغ الشريحة'],
+          [nos[0], 'باقة خمسة أيام', '02010045001', amounts[0]],
+          [nos[1], 'باقة ثلاثة أيام', '02010045002', amounts[1]],
+          [nos[2], 'بلا باقة معروفة', '02010045003', amounts[2]],
+        ]),
+        'S',
+      );
+      return XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' }) as Buffer;
+    };
+    const run = async (file: Buffer, dryRun: boolean) => {
+      const body = multipart([
+        { name: 'university_id', value: fx.universityId },
+        { name: 'dry_run', value: String(dryRun) },
+        { name: 'file', filename: 's.xlsx', contentType: 'application/octet-stream', data: file },
+      ]);
+      const res = await app.inject({ method: 'POST', url: '/api/students/import', headers: { ...body.headers, ...auth(adminToken) }, payload: body.payload });
+      expect(res.statusCode, res.body).toBe(200);
+      return res.json() as { packages: { name: string | null; count: number }[]; rows: { status: string; transport_number?: string }[] };
+    };
+
+    const preview = await run(sheetOf([205, '175', 150]), true);
+    expect(preview.packages).toEqual(expect.arrayContaining([
+      { name: 'باقة اختبار', count: 1 },
+      { name: 'باقة 3 أيام اختبار', count: 1 },
+      { name: null, count: 1 },
+    ]));
+    const commit = await run(sheetOf([205, '175', 150]), false);
+    expect(commit.rows.every((r) => r.transport_number)).toBe(true);
+    const subsOf = async () => {
+      const { data } = await service
+        .from('students')
+        .select('university_student_no, subscriptions(package_id, status, trips_per_week, starts_on, ends_on)')
+        .in('university_student_no', nos);
+      type Sub = { package_id: string; status: string; trips_per_week: number; starts_on: string };
+      return Object.fromEntries(
+        (data ?? []).map((s) => [s.university_student_no, (s.subscriptions as Sub[]).filter((x) => x.status === 'active')]),
+      ) as Record<string, Sub[]>;
+    };
+    let subs = await subsOf();
+    expect(subs[nos[0]!]).toEqual([expect.objectContaining({ package_id: fx.packageId, trips_per_week: 5, starts_on: '2026-09-01' })]);
+    expect(subs[nos[1]!]).toEqual([expect.objectContaining({ package_id: three?.id, trips_per_week: 3, starts_on: '2026-10-03' })]);
+    expect(subs[nos[2]!]).toEqual([]);
+
+    // re-import with changed amounts: existing packages stay, the student without one gets it now
+    await run(sheetOf([175, 205, 205]), false);
+    subs = await subsOf();
+    expect(subs[nos[0]!]?.map((x) => x.package_id)).toEqual([fx.packageId]);
+    expect(subs[nos[1]!]?.map((x) => x.package_id)).toEqual([three?.id]);
+    expect(subs[nos[2]!]?.map((x) => x.package_id)).toEqual([fx.packageId]);
   });
 });

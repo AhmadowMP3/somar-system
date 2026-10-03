@@ -96,6 +96,8 @@ export type MemberRowResult = {
   status: ImportRowStatus;
   full_name: string;
   name_key: string;
+  /** Filled in after a commit (created or updated rows). */
+  transport_number?: string | null;
   reasons: string[];
   warnings: string[];
   data: NormalizedMemberRow | null;

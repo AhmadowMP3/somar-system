@@ -13,6 +13,7 @@ import {
   type ImportFieldKey,
   type ImportRowResult,
   type ImportSummary,
+  type PackageRef,
   type RefItem,
 } from '@somar/shared';
 import type { Config } from '../config.js';
@@ -53,6 +54,8 @@ export type PublicImportRow = Omit<ImportRowResult, 'data'>;
 
 export type ImportResult = {
   summary: ImportSummary;
+  /** Accepted rows per package chosen from «مبلغ الشريحة» (null name = no package). */
+  packages: { name: string | null; count: number }[];
   rows: PublicImportRow[];
   headers: string[];
   mapping: HeaderMapping;
@@ -86,15 +89,37 @@ async function loadRefs(db: Db, universityId: string) {
   const [colleges, areas, students] = await Promise.all([
     db.from('colleges').select('id, name').eq('university_id', universityId),
     db.from('areas').select('id, name').eq('university_id', universityId),
-    db.from('students').select('id, university_student_no').eq('university_id', universityId),
+    db
+      .from('students')
+      .select('id, university_student_no, transport_number, subscriptions(status, packages(name))')
+      .eq('university_id', universityId)
+      .eq('kind', 'student'),
   ]);
-  if (colleges.error || areas.error || students.error) {
-    throw new ApiError(500, 'INTERNAL', undefined, (colleges.error ?? areas.error ?? students.error)?.message);
+  const packages = await db.from('packages').select('id, name, price').eq('university_id', universityId).eq('is_active', true);
+  if (colleges.error || areas.error || students.error || packages.error) {
+    throw new ApiError(500, 'INTERNAL', undefined, (colleges.error ?? areas.error ?? students.error ?? packages.error)?.message);
   }
+  type ExistingRow = {
+    id: string;
+    university_student_no: string;
+    transport_number: string;
+    subscriptions: { status: string; packages: { name: string } | null }[];
+  };
+  const existing = new Map(
+    ((students.data ?? []) as unknown as ExistingRow[]).map((s) => [
+      s.university_student_no,
+      {
+        id: s.id,
+        transport_number: s.transport_number,
+        activePackage: s.subscriptions.find((x) => x.status === 'active')?.packages?.name ?? null,
+      },
+    ]),
+  );
   return {
     colleges: (colleges.data ?? []) as RefItem[],
     areas: (areas.data ?? []) as RefItem[],
-    existing: new Set((students.data ?? []).map((s) => s.university_student_no as string)),
+    packages: (packages.data ?? []) as PackageRef[],
+    existing,
   };
 }
 
@@ -126,21 +151,26 @@ export async function runImport(db: Db, cfg: Config, opts: ImportOptions): Promi
     for (const [key, idx] of Object.entries(columnIndex) as [ImportFieldKey, number][]) {
       if (idx >= 0) raw[key] = cells[idx];
     }
-    return normalizeImportRow(i + 2, raw, { colleges: refs.colleges, areas: refs.areas });
+    return normalizeImportRow(i + 2, raw, { colleges: refs.colleges, areas: refs.areas, packages: refs.packages });
   });
-  rows = dedupeImportRows(rows).map((r) =>
-    r.status === 'created' && r.university_student_no && refs.existing.has(r.university_student_no)
-      ? { ...r, status: 'updated' as const }
-      : r,
-  );
+  rows = dedupeImportRows(rows).map((r) => {
+    const known = r.status === 'created' && r.university_student_no ? refs.existing.get(r.university_student_no) : undefined;
+    if (!known) return r;
+    // an existing student keeps the package already assigned
+    const kept = known.activePackage ? { package_name: known.activePackage, warnings: [...r.warnings, arShared.import.PACKAGE_KEPT(known.activePackage)] } : {};
+    return { ...r, status: 'updated' as const, transport_number: known.transport_number, ...kept };
+  });
 
   if (!opts.dryRun) {
-    rows = await commitRows(db, cfg, opts, rows, refs.colleges);
+    rows = await commitRows(db, cfg, opts, rows, refs.colleges, refs.existing);
   }
 
   const accepted = rows.filter((r) => r.status === 'created' || r.status === 'updated');
   const needsMapping = accepted.filter((r) => r.data && !r.data.area_primary_id && r.data.area_other_text).length;
   const summary = summarizeImport(rows);
+  const perPackage = new Map<string | null, number>();
+  for (const r of accepted) perPackage.set(r.package_name, (perPackage.get(r.package_name) ?? 0) + 1);
+  const packages = [...perPackage].map(([name, count]) => ({ name, count })).sort((a, b) => b.count - a.count);
 
   if (!opts.dryRun) {
     await writeAudit(db, {
@@ -155,6 +185,7 @@ export async function runImport(db: Db, cfg: Config, opts: ImportOptions): Promi
 
   return {
     summary,
+    packages,
     rows: rows.map(({ data: _data, ...rest }) => rest),
     headers: sheet.headers,
     mapping,
@@ -169,6 +200,7 @@ async function commitRows(
   opts: ImportOptions,
   rows: ImportRowResult[],
   colleges: RefItem[],
+  existing: Map<string, { id: string; transport_number: string; activePackage: string | null }>,
 ): Promise<ImportRowResult[]> {
   const newCollegeNames = [
     ...new Set(rows.filter((r) => r.data?.college_name && !r.data.college_id).map((r) => normalizeText(r.data?.college_name))),
@@ -220,6 +252,7 @@ async function commitRows(
   }
 
   // Creates: each row provisions an auth user; failures are rolled back per row.
+  const created = new Map<number, string>();
   const creates = out.map((r, i) => ({ r, i })).filter(({ r }) => r.status === 'created');
   for (let b = 0; b < creates.length; b += 100) {
     await pool(creates.slice(b, b + 100), 4, async ({ r, i }) => {
@@ -231,8 +264,23 @@ async function commitRows(
           out[i] = { ...r, status: 'updated' };
           await db.rpc('import_update_students', { p_university_id: opts.universityId, p_rows: [data] });
         } else reject(i, arShared.import.PROVISION_FAILED);
+      } else {
+        out[i] = { ...r, transport_number: res.transportNumber };
+        created.set(i, res.studentId);
       }
     });
+  }
+
+  // Packages from «مبلغ الشريحة»: new students, and existing ones that have no active subscription yet.
+  const assignments: { student_id: string; package_id: string }[] = [];
+  out.forEach((r, i) => {
+    if (!r.data?.package_id || (r.status !== 'created' && r.status !== 'updated')) return;
+    const studentId = r.status === 'created' ? created.get(i) : existing.get(r.data.university_student_no)?.id;
+    if (studentId) assignments.push({ student_id: studentId, package_id: r.data.package_id });
+  });
+  for (let b = 0; b < assignments.length; b += 500) {
+    const { error } = await db.rpc('import_assign_packages', { p_rows: assignments.slice(b, b + 500) });
+    if (error) throw new ApiError(500, 'INTERNAL', undefined, error.message);
   }
   return out;
 }

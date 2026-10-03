@@ -14,13 +14,15 @@ export const IMPORT_FILE = resolve(dirname(fileURLToPath(import.meta.url)), 'dem
 /** Expected results when importing into a university that has none of these students yet. */
 export const IMPORT_EXPECTED = {
   total: 60,
-  created: 54,
+  created: 55,
   updated: 0,
-  rejected: 3,
+  rejected: 2,
   duplicates: 3,
   needsAreaMapping: 4,
-  /** Rows (sheet row numbers) that must be rejected: bad university number, missing / bad national number. */
-  rejectedRows: [6, 41, 42],
+  /** Rows (sheet row numbers) that must be rejected: bad university number, invalid national number. */
+  rejectedRows: [6, 42],
+  /** Row without a national number: imported, its first password is the transport number. */
+  noNationalIdStudentNo: '330040',
   /** Row whose optional answers are all empty: imported, the student completes them at first login. */
   incompleteStudentNo: '330042',
   /** Student number whose later-in-file row is OLDER; the earlier (newer) row must win. */
@@ -116,7 +118,7 @@ export function buildRows(): Row[] {
   rows.push(make({ university_student_no: '331103', timestamp: '2025/08/30 09:10:00', full_name: 'حمزة جمال القديم' }));
   rows.push(make({ university_student_no: '331103', timestamp: '2025/08/31 09:10:00', full_name: 'حمزة جمال الأحدث' }));
   rows.push(make({ shift_start: 'الساعة ٩ صباحا' })); // 40: unknown shift → left empty, asked at first login
-  rows.push(make({ national_id: '' })); // 41: no national number → rejected
+  rows.push(make({ national_id: '' })); // 41: no national number → imported, password = transport number
   rows.push(make({ national_id: '12ab' })); // 42: invalid national number → rejected
   // 43: only name, university number and national number (student no 330042)
   rows.push(make({ phone: '', college: '', residence: '', area_primary: '', work_days: '', shift_start: '' }));

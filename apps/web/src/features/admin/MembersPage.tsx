@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { FileSpreadsheet, Plus, Printer, Search } from 'lucide-react';
+import { Download, FileSpreadsheet, Plus, Printer, Search } from 'lucide-react';
 import { useId, useMemo, useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import type { ImportSummary, MemberKind } from '@somar/shared';
@@ -11,7 +11,8 @@ import { api } from '@/lib/api';
 import { errorMessage } from '@/lib/errors';
 import { supabase, unwrap } from '@/lib/supabase';
 import { cn } from '@/lib/utils';
-import { ActiveBadge, WEEK_DAYS, WithUniversity } from './common';
+import { exportSheet } from '@/lib/exportSheet';
+import { ActiveBadge, exportNamesAndNumbers, WEEK_DAYS, WithUniversity } from './common';
 
 type MemberRow = {
   id: string;
@@ -97,6 +98,10 @@ function MembersBody({ kind, universityId }: { kind: MemberKind; universityId: s
                 <Printer className="h-4 w-4" aria-hidden />
                 {t.admin.students.printCards}
               </Link>
+            </Button>
+            <Button onClick={() => void exportNamesAndNumbers(universityId, kind, t.admin.exportNamesFile[kind])} data-testid="export-names">
+              <Download className="h-4 w-4" aria-hidden />
+              {t.admin.exportNames}
             </Button>
             <Button onClick={() => setImportOpen(true)} data-testid="member-import">
               <FileSpreadsheet className="h-4 w-4" aria-hidden />
@@ -197,7 +202,14 @@ function MembersBody({ kind, universityId }: { kind: MemberKind; universityId: s
   );
 }
 
-type ImportRow = { row_number: number; status: 'created' | 'updated' | 'duplicate' | 'rejected'; full_name: string; reasons: string[]; warnings: string[] };
+type ImportRow = {
+  row_number: number;
+  status: 'created' | 'updated' | 'duplicate' | 'rejected';
+  full_name: string;
+  transport_number?: string | null;
+  reasons: string[];
+  warnings: string[];
+};
 type ImportResponse = { summary: ImportSummary; rows: ImportRow[]; dry_run: boolean };
 
 const STATUS_TONE = { created: 'success', updated: 'info', duplicate: 'neutral', rejected: 'danger' } as const;
@@ -279,7 +291,26 @@ function ImportDialog({ kind, universityId, onClose }: { kind: MemberKind; unive
             {errorMessage(call.error)}
           </p>
         ) : null}
-        {done ? <p className="rounded-xl bg-success/10 p-3 text-sm font-semibold text-success">{im.resultTitle}</p> : null}
+        {done ? (
+          <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl bg-success/10 p-3">
+            <p className="text-sm font-semibold text-success">{im.resultTitle}</p>
+            <Button
+              size="sm"
+              onClick={() =>
+                exportSheet(
+                  t.admin.exportNamesFile[kind],
+                  res.rows
+                    .filter((r) => r.transport_number)
+                    .map((r) => ({ [t.common.name]: r.full_name, [t.student.transportNumber]: r.transport_number })),
+                )
+              }
+              data-testid="member-import-export"
+            >
+              <Download className="h-4 w-4" aria-hidden />
+              {t.admin.exportNames}
+            </Button>
+          </div>
+        ) : null}
         {res ? (
           <>
             <div className="grid grid-cols-2 gap-2 sm:grid-cols-5">

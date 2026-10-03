@@ -1,12 +1,12 @@
 import { useQuery } from '@tanstack/react-query';
-import { Plus, Printer, Search } from 'lucide-react';
+import { Download, Plus, Printer, Search } from 'lucide-react';
 import { useId, useMemo, useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { Badge, Button, Input, Select } from '@/components/ui/primitives';
 import { DataList, EmptyState, PageHeader, QueryState } from '@/components/ui/states';
 import { t } from '@/i18n/ar';
 import { supabase, unwrap } from '@/lib/supabase';
-import { ActiveBadge, useAreas, useColleges, usePackages, WEEK_DAYS, WithUniversity } from './common';
+import { ActiveBadge, exportNamesAndNumbers, useAreas, useColleges, usePackages, WEEK_DAYS, WithUniversity } from './common';
 
 export type StudentListRow = {
   student_id: string;
@@ -121,6 +121,10 @@ function StudentsBody({ universityId }: { universityId: string }) {
                 <Printer className="h-4 w-4" aria-hidden />
                 {s.printCards}
               </Link>
+            </Button>
+            <Button onClick={() => void exportNamesAndNumbers(universityId, 'student', t.admin.exportNamesFile.student)} data-testid="export-names">
+              <Download className="h-4 w-4" aria-hidden />
+              {t.admin.exportNames}
             </Button>
             <Button asChild variant="secondary">
               <Link to="/admin/students/new">

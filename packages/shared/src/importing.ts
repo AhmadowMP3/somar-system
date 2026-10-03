@@ -8,17 +8,19 @@ import {
   parseWorkDays,
   type ShiftStart,
 } from './normalize.js';
-import { foldArabic, normalizeText, similarity } from './text.js';
+import { foldArabic, normalizeDigits, normalizeText, similarity } from './text.js';
 
 /**
- * Only name, university number and national number are required (owner's request). Anything else the
- * sheet leaves out, the student answers in the first-login questionnaire.
+ * Only name and university number are required (owner's request). The national number is the initial
+ * password when present (else the transport number; staff can add it later). «مبلغ الشريحة» picks the
+ * package by its price. Anything else the sheet leaves out, the student answers at first login.
  */
 export const IMPORT_FIELDS = [
   { key: 'timestamp', header: 'Timestamp', required: false },
   { key: 'full_name', header: 'الاسم الثلاثي', required: true },
   { key: 'university_student_no', header: 'الرقم جامعي', required: true },
-  { key: 'national_id', header: 'الرقم الوطني', required: true },
+  { key: 'national_id', header: 'الرقم الوطني', required: false },
+  { key: 'package_price', header: 'مبلغ الشريحة', required: false },
   { key: 'card_image', header: 'صورة عن البطاقة الجامعية', required: false },
   { key: 'phone', header: 'رقم الهاتف المستخدم في الوتس ضمن مجموعة', required: false },
   { key: 'college', header: 'الكلية التابع اليها', required: false },
@@ -92,8 +94,10 @@ export type NormalizedImportRow = {
   timestamp: number;
   full_name: string;
   university_student_no: string;
-  /** Initial password of a new account. */
-  national_id: string;
+  /** Initial password of a new account (the transport number when missing). */
+  national_id: string | null;
+  /** The package whose price equals «مبلغ الشريحة» (null: no amount or no such package). */
+  package_id: string | null;
   /** Left empty in the sheet → asked at first login. */
   phone_e164: string | null;
   college_name: string | null;
@@ -113,6 +117,10 @@ export type ImportRowResult = {
   status: ImportRowStatus;
   student_name: string;
   university_student_no: string | null;
+  /** Package chosen from the amount, for the preview. */
+  package_name: string | null;
+  /** Filled in after a commit (created or updated rows). */
+  transport_number?: string | null;
   reasons: string[];
   warnings: string[];
   data: NormalizedImportRow | null;
@@ -146,10 +154,23 @@ function matchRef(items: RefItem[], value: string): RefItem | undefined {
   return items.find((i) => foldArabic(i.name) === key);
 }
 
+export type PackageRef = { id: string; name: string; price: number | string | null };
+
 export type ImportContext = {
   colleges: RefItem[];
   areas: RefItem[];
+  /** The university's active packages; the amount column is matched against their price. */
+  packages?: PackageRef[];
 };
+
+/** «205», «205 $», «٢٠٥», 205 → 205 (null when empty or not a number). */
+export function parseAmount(raw: unknown): number | null {
+  if (typeof raw === 'number') return Number.isFinite(raw) ? raw : null;
+  const s = normalizeDigits(normalizeText(raw)).replace(/[,\s]/g, '').replace(/[^\d.]/g, '');
+  if (!s) return null;
+  const n = Number(s);
+  return Number.isFinite(n) ? n : null;
+}
 
 /** Validate and normalize one raw row (keyed by field). */
 export function normalizeImportRow(
@@ -168,9 +189,23 @@ export function normalizeImportRow(
   const studentNo = normalizeStudentNo(raw.university_student_no);
   if (!studentNo.ok) reasons.push(t.STUDENT_NO_INVALID);
 
-  const nid = normalizeNationalId(raw.national_id);
-  if (!nid.ok) reasons.push(nid.reason === 'empty' ? t.NATIONAL_ID_REQUIRED : t.NATIONAL_ID_INVALID);
-  else if (nid.value.length !== 11) warnings.push(t.NATIONAL_ID_LENGTH);
+  let nationalId: string | null = null;
+  if (normalizeText(raw.national_id)) {
+    const nid = normalizeNationalId(raw.national_id);
+    if (!nid.ok) reasons.push(t.NATIONAL_ID_INVALID);
+    else {
+      nationalId = nid.value;
+      if (nid.value.length !== 11) warnings.push(t.NATIONAL_ID_LENGTH);
+    }
+  } else warnings.push(t.NATIONAL_ID_MISSING);
+
+  let pkg: PackageRef | undefined;
+  const amount = parseAmount(raw.package_price);
+  if (amount === null) warnings.push(t.PACKAGE_NO_AMOUNT);
+  else {
+    pkg = (ctx.packages ?? []).find((p) => p.price !== null && Number(p.price) === amount);
+    if (!pkg) warnings.push(t.PACKAGE_UNKNOWN(amount));
+  }
 
   // Optional answers: a bad or empty cell is left empty and asked at first login.
   let phone: string | null = null;
@@ -236,9 +271,10 @@ export function normalizeImportRow(
     row_number: rowNumber,
     student_name: fullName,
     university_student_no: studentNo.ok ? studentNo.value : null,
+    package_name: pkg?.name ?? null,
     warnings,
   };
-  if (reasons.length || !name.ok || !studentNo.ok || !nid.ok) {
+  if (reasons.length || !name.ok || !studentNo.ok) {
     return { ...base, status: 'rejected', reasons, data: null };
   }
   return {
@@ -250,7 +286,8 @@ export function normalizeImportRow(
       timestamp: parseTimestampCell(raw.timestamp),
       full_name: name.value,
       university_student_no: studentNo.value,
-      national_id: nid.value,
+      national_id: nationalId,
+      package_id: pkg?.id ?? null,
       phone_e164: phone,
       college_name: collegeName,
       college_id: collegeId,

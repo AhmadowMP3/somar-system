@@ -17,11 +17,14 @@ type ImportRow = {
   status: 'created' | 'updated' | 'duplicate' | 'rejected';
   student_name: string;
   university_student_no: string | null;
+  package_name: string | null;
+  transport_number?: string | null;
   reasons: string[];
   warnings: string[];
 };
 type ImportResponse = {
   summary: ImportSummary;
+  packages: { name: string | null; count: number }[];
   rows: ImportRow[];
   headers: string[];
   mapping: HeaderMapping;
@@ -205,6 +208,16 @@ function ImportWizard({ universityId }: { universityId: string }) {
             <Counter label={im.counters.duplicates} value={shown.summary.duplicates} active={filter === 'duplicate'} onClick={() => setFilter('duplicate')} testId="count-duplicates" />
             <Counter label={im.counters.rejected} value={shown.summary.rejected} active={filter === 'rejected'} onClick={() => setFilter('rejected')} testId="count-rejected" />
           </div>
+          {shown.packages?.length ? (
+            <div className="flex flex-wrap items-center gap-2 rounded-xl border border-border bg-bg p-3 text-sm" data-testid="import-packages">
+              <span className="font-bold">{im.packagesTitle}</span>
+              {shown.packages.map((p) => (
+                <Badge key={p.name ?? 'none'} tone={p.name ? 'info' : 'warning'}>
+                  {p.name ?? im.noPackage}: <span className="num">{p.count}</span>
+                </Badge>
+              ))}
+            </div>
+          ) : null}
           <DataList
             rows={rows}
             rowKey={(r) => String(r.row_number)}
@@ -219,6 +232,11 @@ function ImportWizard({ universityId }: { universityId: string }) {
               { key: 'status', header: t.common.status, cell: (r) => <Badge tone={STATUS_TONE[r.status]}>{im.status[r.status]}</Badge>, mobileHidden: true },
               { key: 'name', header: t.common.name, cell: (r) => r.student_name, mobileHidden: true },
               { key: 'no', header: t.student.universityNo, cell: (r) => <span className="num">{r.university_student_no ?? t.common.none}</span> },
+              {
+                key: 'package',
+                header: t.student.package,
+                cell: (r) => (r.status === 'rejected' || r.status === 'duplicate' ? null : (r.package_name ?? <span className="text-warning">{im.noPackage}</span>)),
+              },
               {
                 key: 'reasons',
                 header: im.reasons,
@@ -259,9 +277,23 @@ function ImportWizard({ universityId }: { universityId: string }) {
                 >
                   {im.again}
                 </Button>
-                <div className="flex gap-2">
+                <div className="flex flex-wrap gap-2">
                   <Button asChild>
                     <Link to="/admin/students/new">{im.fixManually}</Link>
+                  </Button>
+                  <Button
+                    onClick={() =>
+                      exportSheet(
+                        t.admin.exportNamesFile.student,
+                        shown.rows
+                          .filter((r) => r.transport_number)
+                          .map((r) => ({ [t.common.name]: r.student_name, [t.student.transportNumber]: r.transport_number })),
+                      )
+                    }
+                    data-testid="import-export-names"
+                  >
+                    <Download className="h-4 w-4" aria-hidden />
+                    {t.admin.exportNames}
                   </Button>
                   <Button variant="secondary" disabled={shown.summary.rejected === 0} onClick={exportRejected} data-testid="export-rejected">
                     <Download className="h-4 w-4" aria-hidden />

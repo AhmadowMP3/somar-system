@@ -662,6 +662,8 @@ export const t = {
       qr: 'رمز QR',
       needsMapping: 'بحاجة ربط منطقة',
     },
+    exportNames: 'تصدير الأسماء وأرقام النقل',
+    exportNamesFile: { student: 'الطلاب-وأرقام-النقل', doctor: 'الدكاترة-وأرقام-النقل', employee: 'الموظفون-وأرقام-النقل' },
     members: {
       doctor: {
         title: 'الدكاترة',
@@ -725,6 +727,8 @@ export const t = {
       exportRejected: 'تصدير المرفوضات',
       resultTitle: 'اكتمل الاستيراد',
       mappingBanner: (n: number) => `يوجد ${n} طالب بحاجة إلى ربط منطقة`,
+      packagesTitle: 'الباقات حسب «مبلغ الشريحة»:',
+      noPackage: 'بلا باقة',
       goMapping: 'الانتقال إلى «مناطق بحاجة ربط»',
       again: 'استيراد ملف آخر',
       fields: {
@@ -732,6 +736,7 @@ export const t = {
         full_name: 'الاسم الثلاثي',
         university_student_no: 'الرقم الجامعي',
         national_id: 'الرقم الوطني (كلمة المرور الأولية)',
+        package_price: 'مبلغ الشريحة (يحدد الباقة)',
         card_image: 'صورة البطاقة الجامعية (يتم تجاهلها)',
         phone: 'رقم الهاتف',
         college: 'الكلية',

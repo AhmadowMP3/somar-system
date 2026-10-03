@@ -51,11 +51,13 @@ export async function runMemberImport(db: Db, cfg: Config, opts: MemberImportOpt
 
   const { data: existingRows, error } = await db
     .from('students')
-    .select('id, profile_id, full_name')
+    .select('id, profile_id, full_name, transport_number')
     .eq('university_id', opts.universityId)
     .eq('kind', opts.kind);
   if (error) throw new ApiError(500, 'INTERNAL');
-  const existing = new Map((existingRows ?? []).map((r) => [memberNameKey(r.full_name), r as { id: string; profile_id: string | null }]));
+  const existing = new Map(
+    (existingRows ?? []).map((r) => [memberNameKey(r.full_name), r as { id: string; profile_id: string | null; transport_number: string }]),
+  );
 
   let rows = sheet.rows.map((cells, i) => {
     const raw: Partial<Record<MemberFieldKey, unknown>> = {};
@@ -98,11 +100,11 @@ export async function runMemberImport(db: Db, cfg: Config, opts: MemberImportOpt
         if (!upErr && target.profile_id) {
           await db.from('profiles').update({ full_name: d.full_name }).eq('id', target.profile_id);
         }
-        out.push(upErr ? failed(r) : r);
+        out.push(upErr ? failed(r) : { ...r, transport_number: target.transport_number });
         continue;
       }
       const res = await provisionStudent(db, cfg, opts.universityId, d, null);
-      out.push(res.ok ? r : failed(r));
+      out.push(res.ok ? { ...r, transport_number: res.transportNumber } : failed(r));
     }
     rows = out;
   }
