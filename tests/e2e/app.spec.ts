@@ -329,7 +329,9 @@ test('8. admin saves a stop once in the library and adds it to a route from the 
   await page.getByTestId('stop-search').fill('جسر');
   await expect(options.getByRole('option')).toHaveCount(1);
   await options.getByText('جسر الحج').click();
-  await page.getByLabel('موعد الانطلاق').last().fill('07:25');
+  await page.getByTestId('stop-departure-hour').selectOption('7');
+  await page.getByTestId('stop-departure-minute').selectOption('25');
+  await page.getByTestId('stop-departure-period').selectOption('am');
   await page.getByTestId('route-stop-save').click();
   await expect(page.getByText('جسر الحج').filter({ visible: true }).first()).toBeVisible();
 
@@ -409,16 +411,17 @@ test('12. the weekly schedule is edited only by the admin; the student has no wa
   await page.goto(`/admin/students/${st.id}`);
   await page.getByTestId('edit-schedule').click();
   for (const dow of [1, 2, 3, 4, 5, 6, 7]) await page.getByTestId(`day-${dow}`).setChecked(dow === 2);
-  await page.getByTestId('out-2').fill('09:00');
-  await page.getByTestId('ret-2').fill('08:00');
+  // the staff editor offers the same slots as the questionnaire
+  await page.getByTestId('out-2').selectOption('12:00');
+  await page.getByTestId('ret-2').selectOption('11:30');
   await page.getByTestId('schedule-save').click();
   await expect(page.getByRole('alert').filter({ hasText: 'وقت العودة يجب أن يكون بعد وقت الذهاب' })).toBeVisible();
-  await page.getByTestId('ret-2').fill('15:30');
+  await page.getByTestId('ret-2').selectOption('15:30');
   await page.getByTestId('schedule-save').click();
   const card = page.getByTestId('student-schedule');
   await expect(card.getByRole('listitem')).toHaveCount(1);
   await expect(card).toContainText('الثلاثاء');
-  await expect(card).toContainText('15:30');
+  await expect(card).toContainText('3:30 م');
 });
 
 test('13. the student sees the card on the new design and downloads it as an image', async ({ page }) => {
@@ -455,11 +458,13 @@ test('14. admin schedules a weekly notification for several days at a set time, 
   await expect(dialog.getByRole('alert')).toHaveText('اختر يوماً واحداً على الأقل');
   await dialog.getByText('الاثنين', { exact: true }).click();
   await dialog.getByText('الأربعاء', { exact: true }).click();
-  await dialog.getByTestId('recurring-time').fill('18:00');
+  await dialog.getByTestId('recurring-time-hour').selectOption('6');
+  await dialog.getByTestId('recurring-time-minute').selectOption('0');
+  await dialog.getByTestId('recurring-time-period').selectOption('pm');
   await dialog.getByTestId('recurring-save').click();
   const list = page.getByTestId('recurring-list');
   await expect(list).toContainText('تذكير اختيار المكان');
-  await expect(list).toContainText('كل الاثنين، الأربعاء الساعة 18:00');
+  await expect(list).toContainText('كل الاثنين، الأربعاء الساعة 6:00 م');
   await list.getByRole('switch').click();
   await expect(list).toContainText('متوقف');
 });
@@ -476,7 +481,7 @@ test('15. tomorrow pickup: window from the settings, one locked choice of stop +
     await freezeClock('2026-10-05 18:00');
     await login(page, st.transportNumber, STAFF_PASSWORD);
     await expect(page).toHaveURL(/\/$/);
-    await expect(page.getByTestId('pickup-home')).toContainText('يفتح الاختيار كل يوم من الساعة 18:30 حتى الساعة 22:00');
+    await expect(page.getByTestId('pickup-home')).toContainText('يفتح الاختيار كل يوم من الساعة 6:30 م حتى الساعة 10:00 م');
     await page.getByTestId('pickup-home').click();
     await expect(page.getByTestId('pickup-closed')).toBeVisible();
 
@@ -488,14 +493,14 @@ test('15. tomorrow pickup: window from the settings, one locked choice of stop +
     await expect(page.getByRole('alert')).toHaveText('اختر مكان الذهاب ووقت العودة ومكان النزول');
     await page.getByTestId('pickup-stop-search').fill('ساحة');
     await page.getByTestId('pickup-stop-options').getByText('ساحة جامعة', { exact: true }).click();
-    await page.getByTestId('pickup-return-times').getByRole('radio', { name: '14:00' }).click();
+    await page.getByTestId('pickup-return-times').getByRole('radio', { name: '2:00 م' }).click();
     await page.getByTestId('pickup-return-stop-search').fill('رجاء');
     await page.getByTestId('pickup-return-stop-options').getByText('الرجاء', { exact: true }).click();
     await page.getByTestId('pickup-save').click();
     await page.getByRole('dialog').getByRole('button', { name: 'تأكيد' }).click();
     const locked = page.getByTestId('pickup-locked');
     await expect(locked.getByTestId('pickup-current')).toHaveText('ساحة جامعة');
-    await expect(locked.getByTestId('pickup-current-return')).toHaveText('الرجاء — الساعة 14:00');
+    await expect(locked.getByTestId('pickup-current-return')).toHaveText('الرجاء — الساعة 2:00 م');
     await expect(page.getByTestId('pickup-save')).toHaveCount(0);
 
     await page.context().clearCookies();
@@ -510,18 +515,22 @@ test('15. tomorrow pickup: window from the settings, one locked choice of stop +
     await areas.getByTestId('pickup-stop-row').filter({ hasText: 'ساحة جامعة' }).click();
     await expect(areas).toContainText(st.transportNumber);
     const returns = page.getByTestId('pickup-returns');
-    await expect(returns).toContainText('عودة الساعة 14:00');
+    await expect(returns).toContainText('عودة الساعة 2:00 م');
     await expect(returns).toContainText('الرجاء');
 
     // the window times are edited in the settings
     await page.goto('/admin/settings');
     await page.getByLabel('نطاق الإعدادات').selectOption('university');
-    await expect(page.getByTestId('pickup_open_time')).toHaveValue('18:30');
-    await page.getByTestId('pickup_open_time').fill('17:00');
-    await page.getByTestId('pickup_close_time').fill('16:00');
+    await expect(page.getByTestId('pickup_open_time-hour')).toHaveValue('6');
+    await expect(page.getByTestId('pickup_open_time-minute')).toHaveValue('30');
+    await expect(page.getByTestId('pickup_open_time-period')).toHaveValue('pm');
+    await page.getByTestId('pickup_open_time-hour').selectOption('5');
+    await page.getByTestId('pickup_open_time-minute').selectOption('0');
+    await page.getByTestId('pickup_close_time-hour').selectOption('4');
+    await page.getByTestId('pickup_close_time-minute').selectOption('0');
     await page.getByRole('button', { name: 'حفظ' }).click();
     await expect(page.getByText('ساعة الإغلاق يجب أن تكون بعد ساعة الفتح')).toBeVisible();
-    await page.getByTestId('pickup_close_time').fill('23:00');
+    await page.getByTestId('pickup_close_time-hour').selectOption('11');
     await page.getByRole('button', { name: 'حفظ' }).click();
     await expect(page.getByText('تم حفظ الإعدادات')).toBeVisible();
     const { data: saved } = await service.from('settings').select('pickup_open_time, pickup_close_time').eq('university_id', uni.id).single();
@@ -653,7 +662,7 @@ test('18. route map: numbered stops and the path, from the list or the map view;
   // a stop's popup has its name, time and directions
   await map.locator('.route-stop').first().click();
   await expect(map.locator('.leaflet-popup-content')).toContainText('1. ساحة جامعة');
-  await expect(map.locator('.leaflet-popup-content')).toContainText('07:05');
+  await expect(map.locator('.leaflet-popup-content')).toContainText('7:05 ص');
   await expect(map.locator('.leaflet-popup-content a')).toHaveAttribute('href', uni.stopUrl);
 
   // back to the list and forth with the view switch

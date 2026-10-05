@@ -62,7 +62,7 @@ describe('stop library', () => {
       .eq('type', 'SCHEDULE_CHANGED')
       .like('body', '%دوار الشفاء%');
     expect(notes?.length).toBe(1);
-    expect(notes?.[0]?.body).toContain('07:20');
+    expect(notes?.[0]?.body).toContain('7:20 ص');
   });
 });
 

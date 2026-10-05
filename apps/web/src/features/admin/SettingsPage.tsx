@@ -3,6 +3,7 @@ import { useEffect, useId, useState } from 'react';
 import { useScope } from '@/app/auth';
 import { useToast } from '@/components/ui/overlay';
 import { Button, Card, Field, Input, Select, Switch } from '@/components/ui/primitives';
+import { TimeInput12 } from '@/components/ui/TimeInput12';
 import { PageHeader, QueryState } from '@/components/ui/states';
 import { t } from '@/i18n/ar';
 import { errorMessage } from '@/lib/errors';
@@ -167,15 +168,12 @@ function SettingsForm({ row, inherited, target, readOnly }: { row: SettingsRow; 
           <div className="grid gap-4 sm:grid-cols-2">
             {(['pickup_open_time', 'pickup_close_time'] as const).map((key) => (
               <Field key={key} label={s.fields[key]} htmlFor={`${baseId}-${key}`}>
-                <Input
+                <TimeInput12
                   id={`${baseId}-${key}`}
-                  type="time"
-                  dir="ltr"
-                  className="text-center"
                   disabled={readOnly}
                   value={(form[key] ?? '').slice(0, 5)}
-                  onChange={(e) => setForm({ ...form, [key]: e.target.value })}
-                  data-testid={key}
+                  onChange={(v) => setForm({ ...form, [key]: v })}
+                  testId={key}
                 />
               </Field>
             ))}

@@ -1,6 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import {
   addDays,
+  formatClock,
+  formatDateTime,
+  formatTime,
   snapDay,
   snapOutbound,
   snapReturn,
@@ -148,10 +151,19 @@ describe('bus time slots', () => {
       '08:00', '08:00', '10:00', '10:00', '12:00', '12:00', '12:00', '12:00',
     ]);
   });
-  it('rounds return times to 11:30 / 2 / 3:30 / 4', () => {
-    expect(['10:00', '11:30', '11:45', '14:00', '14:15', '15:30', '15:45', '19:00'].map(snapReturn)).toEqual([
-      '11:30', '11:30', '14:00', '14:00', '15:30', '15:30', '16:00', '16:00',
+  it('rounds return times to 11:30 / 2 / 3:30', () => {
+    expect(['10:00', '11:30', '11:45', '14:00', '14:15', '15:30', '16:00', '19:00'].map(snapReturn)).toEqual([
+      '11:30', '11:30', '14:00', '14:00', '15:30', '15:30', '15:30', '15:30',
     ]);
+  });
+  it('shows times on a 12-hour clock', () => {
+    expect(['00:15', '07:30', '11:59', '12:00', '14:05', '23:45:00'].map(formatClock)).toEqual([
+      '12:15 ص', '7:30 ص', '11:59 ص', '12:00 م', '2:05 م', '11:45 م',
+    ]);
+    expect(formatClock(null)).toBe('');
+    // 05:30 UTC = 08:30 in Damascus
+    expect(formatTime('2026-10-06T05:30:00Z')).toBe('8:30 ص');
+    expect(formatDateTime('2026-10-06T12:00:00Z')).toBe('06/10/2026 3:00 م');
   });
   it('keeps the return after the outbound', () => {
     expect(snapDay('13:30', '14:00')).toEqual({ outbound: '12:00', ret: '14:00' });

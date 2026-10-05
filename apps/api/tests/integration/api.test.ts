@@ -219,7 +219,7 @@ describe('21-22. notifications', () => {
       .eq('type', 'SCHEDULE_CHANGED');
     expect(notes?.length).toBe(active);
     expect(new Set(notes?.map((n) => n.student_id)).size).toBe(active);
-    expect(notes?.[0]?.body).toContain('07:15');
+    expect(notes?.[0]?.body).toContain('7:15 ص');
   });
 
   it('the daily job is idempotent', async () => {

@@ -5,6 +5,7 @@ import { formatClock, formatDate } from '@somar/shared';
 import { useScope } from '@/app/auth';
 import { ConfirmDialog, Dialog, useToast } from '@/components/ui/overlay';
 import { Button, Card, CardTitle, Field, Input, Switch, Textarea } from '@/components/ui/primitives';
+import { TimeInput12 } from '@/components/ui/TimeInput12';
 import { QueryState } from '@/components/ui/states';
 import { t } from '@/i18n/ar';
 import { errorMessage } from '@/lib/errors';
@@ -181,16 +182,7 @@ export function RecurringNotifications({ universityId }: { universityId: string 
               </div>
             </fieldset>
             <Field label={n.recurringTime} htmlFor={ids.time}>
-              <Input
-                id={ids.time}
-                type="time"
-                dir="ltr"
-                required
-                className="max-w-[180px] text-center"
-                value={draft.send_time}
-                onChange={(e) => setDraft({ ...draft, send_time: e.target.value })}
-                data-testid="recurring-time"
-              />
+              <TimeInput12 id={ids.time} value={draft.send_time} onChange={(v) => setDraft({ ...draft, send_time: v })} testId="recurring-time" />
             </Field>
             {error ? (
               <p role="alert" className="rounded-lg bg-danger/10 p-3 text-sm font-semibold text-danger">

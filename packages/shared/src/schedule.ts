@@ -1,9 +1,9 @@
 /**
  * The bus timetable has fixed slots (owner's decision, 2026-10-06): students leave at 8, 10 or 12
- * o'clock and come back at 11:30, 2, 3:30 or 4. Free times saved earlier are rounded to these slots.
+ * o'clock and come back at 11:30, 2 or 3:30. Free times saved earlier are rounded to these slots.
  */
 export const OUTBOUND_SLOTS = ['08:00', '10:00', '12:00'] as const;
-export const RETURN_SLOTS = ['11:30', '14:00', '15:30', '16:00'] as const;
+export const RETURN_SLOTS = ['11:30', '14:00', '15:30'] as const;
 
 const minutes = (hhmm: string) => {
   const [h = 0, m = 0] = hhmm.split(':').map(Number);
@@ -18,13 +18,12 @@ export function snapOutbound(time: string): string {
   return '12:00';
 }
 
-/** up to 11:30 → 11:30 · up to 2 → 2 · up to 3:30 → 3:30 · later → 4. */
+/** up to 11:30 → 11:30 · up to 2 → 2 · later → 3:30. */
 export function snapReturn(time: string): string {
   const t = minutes(time);
   if (t <= minutes('11:30')) return '11:30';
   if (t <= minutes('14:00')) return '14:00';
-  if (t <= minutes('15:30')) return '15:30';
-  return '16:00';
+  return '15:30';
 }
 
 /**

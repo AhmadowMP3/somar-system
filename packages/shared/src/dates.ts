@@ -61,22 +61,25 @@ export function formatDate(date: string | null | undefined): string {
   return `${d}/${m}/${y}`;
 }
 
-/** Instant → `dd/MM/yyyy HH:mm` in Damascus time. */
+/** Instant → `dd/MM/yyyy h:mm ص|م` in Damascus time. */
 export function formatDateTime(instant: string | Date | null | undefined): string {
   if (!instant) return '';
   const t = new Date(new Date(instant).getTime() + DAMASCUS_OFFSET_MINUTES * 60_000);
   const iso = t.toISOString();
-  return `${formatDate(iso.slice(0, 10))} ${iso.slice(11, 16)}`;
+  return `${formatDate(iso.slice(0, 10))} ${formatClock(iso.slice(11, 16))}`;
 }
 
-/** Instant → `HH:mm` in Damascus time. */
+/** Instant → `h:mm ص|م` in Damascus time. */
 export function formatTime(instant: string | Date | null | undefined): string {
   if (!instant) return '';
   const t = new Date(new Date(instant).getTime() + DAMASCUS_OFFSET_MINUTES * 60_000);
-  return t.toISOString().slice(11, 16);
+  return formatClock(t.toISOString().slice(11, 16));
 }
 
-/** Postgres `time` (`HH:MM:SS`) → `HH:MM`. */
+/** `HH:MM[:SS]` → 12-hour clock with the Arabic marks: `08:00` → «8:00 ص», `14:30` → «2:30 م». */
 export function formatClock(time: string | null | undefined): string {
-  return time ? time.slice(0, 5) : '';
+  const m = time ? /^(\d{1,2}):(\d{2})/.exec(time) : null;
+  if (!m) return '';
+  const h = Number(m[1]);
+  return `${h % 12 === 0 ? 12 : h % 12}:${m[2]} ${h < 12 ? 'ص' : 'م'}`;
 }

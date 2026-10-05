@@ -8,6 +8,7 @@ import { RouteMap } from '@/components/RouteMap';
 import { SearchPicker } from '@/components/SearchPicker';
 import { ConfirmDialog, Dialog, useToast } from '@/components/ui/overlay';
 import { Badge, Button, Card, Field, Input, Select, Switch, Textarea } from '@/components/ui/primitives';
+import { TimeInput12 } from '@/components/ui/TimeInput12';
 import { EmptyState, PageHeader, QueryState } from '@/components/ui/states';
 import { t } from '@/i18n/ar';
 import { errorMessage } from '@/lib/errors';
@@ -374,7 +375,7 @@ function RouteDialog({ universityId, route, onClose, onSaved }: {
               </Select>
             </Field>
             <Field label={r.departure} htmlFor={ids.time}>
-              <Input id={ids.time} type="time" value={form.departure_time} onChange={(e) => setForm({ ...form, departure_time: e.target.value })} />
+              <TimeInput12 id={ids.time} value={form.departure_time} onChange={(v) => setForm({ ...form, departure_time: v })} testId="route-departure" />
             </Field>
           </div>
           <Field label={r.activeDays}>
@@ -458,7 +459,7 @@ function StopDialog({ universityId, route, stop, onClose, onSaved }: {
               <SearchPicker items={options} value={stopId} onChange={setStopId} placeholder={r.searchStop} label={r.pickStop} emptyText={r.noMatches} testId="stop" />
             </Field>
             <Field label={r.departure} htmlFor={ids.time}>
-              <Input id={ids.time} type="time" value={time} onChange={(e) => setTime(e.target.value)} />
+              <TimeInput12 id={ids.time} value={time} onChange={setTime} testId="stop-departure" />
             </Field>
             <div className="flex flex-wrap items-center justify-between gap-2">
               <Button asChild variant="link">

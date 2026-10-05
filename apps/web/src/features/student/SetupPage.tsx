@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Fragment, useEffect, useId, useMemo, useState, type FormEvent } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { normalizePhone, OUTBOUND_SLOTS, RETURN_SLOTS, SHIFT_STARTS } from '@somar/shared';
+import { formatClock, normalizePhone, OUTBOUND_SLOTS, RETURN_SLOTS, SHIFT_STARTS } from '@somar/shared';
 import { useAuth } from '@/app/auth';
 import { CreditFooter, Logo } from '@/components/common';
 import { Button, Card, Field, Input, Select } from '@/components/ui/primitives';
@@ -96,16 +96,12 @@ export const TIME_OPTIONS = Array.from({ length: (22 - 6) * 4 + 1 }, (_, i) => {
   return `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`;
 });
 
-/** The bus slots a student may choose: leave at 8, 10 or 12; come back at 11:30, 2, 3:30 or 4. */
+/** The bus slots a student may choose: leave at 8, 10 or 12; come back at 11:30, 2 or 3:30. */
 export const OUTBOUND_OPTIONS: readonly string[] = OUTBOUND_SLOTS;
 export const RETURN_OPTIONS: readonly string[] = RETURN_SLOTS;
 
-/** 08:00 → «8:00 صباحاً», 14:30 → «2:30 مساءً». */
-export function timeLabel(hhmm: string): string {
-  const [h = 0, m = 0] = hhmm.split(':').map(Number);
-  const h12 = h % 12 === 0 ? 12 : h % 12;
-  return `${h12}:${String(m).padStart(2, '0')} ${h < 12 ? t.setup.am : t.setup.pm}`;
-}
+/** 08:00 → «8:00 ص», 14:30 → «2:30 م» (the app's 12-hour clock). */
+export const timeLabel = formatClock;
 
 type Step =
   | { kind: 'phone' }
@@ -506,7 +502,7 @@ export function SetupPage() {
   );
 }
 
-/** Ticks and outbound/return times for each weekday; one line per time box on phones. */
+/** Ticks and the outbound/return slot of each weekday (staff editor); one line per dropdown on phones. */
 export function DaysEditor({ days, onChange }: { days: DayRow[]; onChange: (days: DayRow[]) => void }) {
   const s = t.setup;
   const update = (dow: number, patch: Partial<DayRow>) => onChange(days.map((d) => (d.dow === dow ? { ...d, ...patch } : d)));
@@ -526,30 +522,8 @@ export function DaysEditor({ days, onChange }: { days: DayRow[]; onChange: (days
           </label>
           {d.on ? (
             <div className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-2 sm:gap-3">
-              <label className="flex min-w-0 items-center gap-3 text-sm">
-                <span className="w-24 shrink-0 text-muted">{s.outbound}</span>
-                <Input
-                  type="time"
-                  step={300}
-                  dir="ltr"
-                  className="min-w-0 flex-1 appearance-none text-center"
-                  value={d.outbound}
-                  onChange={(e) => update(d.dow, { outbound: e.target.value })}
-                  data-testid={`out-${d.dow}`}
-                />
-              </label>
-              <label className="flex min-w-0 items-center gap-3 text-sm">
-                <span className="w-24 shrink-0 text-muted">{s.return}</span>
-                <Input
-                  type="time"
-                  step={300}
-                  dir="ltr"
-                  className="min-w-0 flex-1 appearance-none text-center"
-                  value={d.ret}
-                  onChange={(e) => update(d.dow, { ret: e.target.value })}
-                  data-testid={`ret-${d.dow}`}
-                />
-              </label>
+              <TimeSelect label={s.outbound} value={d.outbound} options={OUTBOUND_OPTIONS} onChange={(v) => update(d.dow, { outbound: v })} testId={`out-${d.dow}`} />
+              <TimeSelect label={s.return} value={d.ret} options={RETURN_OPTIONS} onChange={(v) => update(d.dow, { ret: v })} testId={`ret-${d.dow}`} />
             </div>
           ) : null}
         </li>

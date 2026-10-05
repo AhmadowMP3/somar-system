@@ -84,7 +84,7 @@ export function PickupHomeCard() {
               ? t.pickup.homeChosen(tomorrow.stops.name)
               : win.data.open
                 ? t.pickup.homeOpen
-                : t.pickup.opensAt(win.data.opens_at, win.data.closes_at)}
+                : t.pickup.opensAt(formatClock(win.data.opens_at), formatClock(win.data.closes_at))}
           </span>
         </span>
       </span>
@@ -243,7 +243,7 @@ export function PickupPage() {
         <Card className="flex flex-col items-center gap-3 py-8 text-center" data-testid="pickup-closed">
           <Clock className="h-12 w-12 text-brand-ink" aria-hidden />
           <p className="text-lg font-extrabold">{w.phase === 'after' ? p.afterTitle : p.closedTitle}</p>
-          <p className="text-sm text-muted">{p.opensAt(w.opens_at, w.closes_at)}</p>
+          <p className="text-sm text-muted">{p.opensAt(formatClock(w.opens_at), formatClock(w.closes_at))}</p>
         </Card>
       )}
 
