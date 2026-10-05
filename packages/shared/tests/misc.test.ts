@@ -143,9 +143,9 @@ describe('maps links and QR payloads', () => {
 });
 
 describe('bus time slots', () => {
-  it('rounds outbound times to 8 / 10 / 12 / 2', () => {
+  it('rounds outbound times to 8 / 10 / 12', () => {
     expect(['06:00', '08:45', '09:00', '10:45', '10:50', '12:59', '13:00', '16:00'].map(snapOutbound)).toEqual([
-      '08:00', '08:00', '10:00', '10:00', '12:00', '12:00', '14:00', '14:00',
+      '08:00', '08:00', '10:00', '10:00', '12:00', '12:00', '12:00', '12:00',
     ]);
   });
   it('rounds return times to 11:30 / 2 / 3:30 / 4', () => {
@@ -154,7 +154,8 @@ describe('bus time slots', () => {
     ]);
   });
   it('keeps the return after the outbound', () => {
-    expect(snapDay('13:30', '14:00')).toEqual({ outbound: '14:00', ret: '15:30' });
+    expect(snapDay('13:30', '14:00')).toEqual({ outbound: '12:00', ret: '14:00' });
+    expect(snapDay('14:00', '13:00')).toEqual({ outbound: '12:00', ret: '14:00' });
     expect(snapDay('11:00', '11:15')).toEqual({ outbound: '12:00', ret: '14:00' });
     expect(snapDay('07:30', '12:00')).toEqual({ outbound: '08:00', ret: '14:00' });
   });

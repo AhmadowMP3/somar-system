@@ -138,7 +138,8 @@ describe('bus time slots on save', () => {
       ['07:30', '13:45', '08:00:00', '14:00:00'],
       ['09:15', '16:30', '10:00:00', '16:00:00'],
       ['11:00', '11:15', '12:00:00', '14:00:00'],
-      ['13:30', '14:00', '14:00:00', '15:30:00'],
+      ['13:30', '14:00', '12:00:00', '14:00:00'],
+      ['14:00', '15:30', '12:00:00', '15:30:00'],
     ];
     for (const [i, [out, back, wantOut, wantBack]] of cases.entries()) {
       const { error } = await service.from('student_schedule').upsert({ student_id: st.id, dow: i + 1, outbound_time: out, return_time: back });

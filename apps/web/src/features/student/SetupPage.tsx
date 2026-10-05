@@ -96,7 +96,7 @@ export const TIME_OPTIONS = Array.from({ length: (22 - 6) * 4 + 1 }, (_, i) => {
   return `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`;
 });
 
-/** The bus slots a student may choose: leave at 8, 10, 12 or 2; come back at 11:30, 2, 3:30 or 4. */
+/** The bus slots a student may choose: leave at 8, 10 or 12; come back at 11:30, 2, 3:30 or 4. */
 export const OUTBOUND_OPTIONS: readonly string[] = OUTBOUND_SLOTS;
 export const RETURN_OPTIONS: readonly string[] = RETURN_SLOTS;
 
