@@ -1,8 +1,10 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Lock, Pencil, Plus } from 'lucide-react';
-import { useId, useState, type FormEvent } from 'react';
+import { useId, useMemo, useState, type FormEvent } from 'react';
 import { Link } from 'react-router-dom';
+import { foldArabic } from '@somar/shared';
 import { useScope, type University } from '@/app/auth';
+import { SearchPicker } from '@/components/SearchPicker';
 import { Dialog, useToast } from '@/components/ui/overlay';
 import { Button, Card, Field, Input, Select, Switch } from '@/components/ui/primitives';
 import { DataList, EmptyState, PageHeader, QueryState } from '@/components/ui/states';
@@ -10,7 +12,7 @@ import { t } from '@/i18n/ar';
 import { api } from '@/lib/api';
 import { errorMessage } from '@/lib/errors';
 import { LOGO_BUCKET, signedUrl, supabase, unwrap } from '@/lib/supabase';
-import { ActiveBadge, useAreas, useColleges, useIsAdmin, WithUniversity, type Named } from './common';
+import { ActiveBadge, useAreas, useColleges, useIsAdmin, useStopOptions, WithUniversity, type Named } from './common';
 
 function LogoThumb({ path }: { path: string | null }) {
   const q = useQuery({ queryKey: ['logo', path], enabled: Boolean(path), queryFn: () => signedUrl(LOGO_BUCKET, path) });
@@ -371,11 +373,15 @@ export function AreaMappingPage() {
   return <WithUniversity>{(universityId) => <AreaMappingBody universityId={universityId} />}</WithUniversity>;
 }
 
+/** Comparison key: Arabic spelling variants folded, spaces and punctuation ignored. */
+const placeKey = (name: string) => foldArabic(name).replace(/[\s()\-_.,،/]/g, '');
+
 function AreaMappingBody({ universityId }: { universityId: string }) {
   const m = t.admin.mapping;
   const qc = useQueryClient();
   const toast = useToast();
   const areas = useAreas(universityId);
+  const stops = useStopOptions(universityId);
   const query = useQuery({
     queryKey: ['area-mapping', universityId],
     queryFn: async () =>
@@ -383,10 +389,36 @@ function AreaMappingBody({ universityId }: { universityId: string }) {
   });
   const [choice, setChoice] = useState<Record<string, string>>({});
 
+  // Targets: every active area, plus every stop whose name is not already an area (a stop gets an area of
+  // its own name when it is chosen). Ids are prefixed so both kinds share one list.
+  const targets = useMemo(() => {
+    const areaList = (areas.data ?? []).filter((a) => a.is_active);
+    const areaKeys = new Set(areaList.map((a) => placeKey(a.name)));
+    return [
+      ...areaList.map((a) => ({ id: `area:${a.id}`, name: a.name, key: placeKey(a.name) })),
+      ...(stops.data ?? [])
+        .filter((s) => !areaKeys.has(placeKey(s.name)))
+        .map((s) => ({ id: `stop:${s.id}`, name: `${s.name} · ${m.stopTag}`, key: placeKey(s.name) })),
+    ].sort((x, y) => x.name.localeCompare(y.name, 'ar'));
+  }, [areas.data, stops.data, m.stopTag]);
+  const exact = useMemo(() => new Map(targets.map((x) => [x.key, x.id])), [targets]);
+
+  const invalidate = () => {
+    void qc.invalidateQueries({ queryKey: ['area-mapping', universityId] });
+    void qc.invalidateQueries({ queryKey: ['areas', universityId] });
+    void qc.invalidateQueries({ queryKey: ['stop-options', universityId] });
+    void qc.invalidateQueries({ queryKey: ['students'] });
+  };
+
   const map = useMutation({
-    mutationFn: async ({ text, areaId }: { text: string; areaId: string | 'new' }) => {
-      let id = areaId;
-      if (areaId === 'new') {
+    mutationFn: async ({ text, target }: { text: string; target: string }) => {
+      if (target.startsWith('stop:')) {
+        return unwrap(
+          await supabase.rpc('map_area_other_text_to_stop', { p_university_id: universityId, p_other_text: text, p_stop_id: target.slice(5) }),
+        ) as number;
+      }
+      let id = target.slice(5);
+      if (target === 'new') {
         const created = unwrap(
           await supabase.from('areas').insert({ university_id: universityId, name: text }).select('id').single(),
         ) as { id: string };
@@ -398,21 +430,40 @@ function AreaMappingBody({ universityId }: { universityId: string }) {
     },
     onSuccess: (n) => {
       toast.success(m.mapped(n));
-      void qc.invalidateQueries({ queryKey: ['area-mapping', universityId] });
-      void qc.invalidateQueries({ queryKey: ['areas', universityId] });
-      void qc.invalidateQueries({ queryKey: ['students'] });
+      invalidate();
+    },
+    onError: (e) => toast.error(errorMessage(e)),
+  });
+
+  const autoMap = useMutation({
+    mutationFn: async () =>
+      unwrap(await supabase.rpc('auto_map_area_texts', { p_university_id: universityId })) as { places: number; students: number },
+    onSuccess: (r) => {
+      toast.success(m.autoMapped(r.places, r.students));
+      invalidate();
     },
     onError: (e) => toast.error(errorMessage(e)),
   });
 
   return (
     <div>
-      <PageHeader title={m.title} subtitle={m.intro} />
+      <PageHeader
+        title={m.title}
+        subtitle={m.intro}
+        actions={
+          query.data?.length ? (
+            <Button variant="secondary" disabled={autoMap.isPending} onClick={() => autoMap.mutate()} data-testid="auto-map">
+              {autoMap.isPending ? t.common.saving : m.autoMap}
+            </Button>
+          ) : null
+        }
+      />
       <QueryState query={query} empty={(rows) => (rows.length ? null : <EmptyState title={m.empty} hint={m.emptyHint} />)}>
         {(rows) => (
           <ul className="space-y-3">
             {rows.map((r) => {
-              const value = choice[r.area_other_text] ?? '';
+              const suggested = exact.get(placeKey(r.area_other_text)) ?? '';
+              const value = choice[r.area_other_text] ?? suggested;
               return (
                 <li key={r.area_other_text}>
                   <Card className="flex flex-wrap items-end gap-3">
@@ -421,30 +472,28 @@ function AreaMappingBody({ universityId }: { universityId: string }) {
                       <p className="font-bold">{r.area_other_text}</p>
                       <p className="text-xs text-muted">
                         {m.count}: <span className="num">{r.student_count}</span>
+                        {suggested ? <span className="ms-2 font-semibold text-success">{m.exactMatch}</span> : null}
                       </p>
                     </div>
-                    <Select
-                      aria-label={m.mapTo}
-                      className="w-full sm:w-64"
-                      value={value}
-                      onChange={(e) => setChoice((c) => ({ ...c, [r.area_other_text]: e.target.value }))}
-                    >
-                      <option value="">{m.mapTo}</option>
-                      <option value="new">{m.createNew}</option>
-                      {(areas.data ?? [])
-                        .filter((a) => a.is_active)
-                        .map((a) => (
-                          <option key={a.id} value={a.id}>
-                            {a.name}
-                          </option>
-                        ))}
-                    </Select>
+                    <div className="w-full sm:w-72">
+                      <SearchPicker
+                        items={targets}
+                        value={value.startsWith('area:') || value.startsWith('stop:') ? value : ''}
+                        onChange={(id) => setChoice((c) => ({ ...c, [r.area_other_text]: id }))}
+                        placeholder={m.search}
+                        label={m.mapTo}
+                        emptyText={m.noMatch}
+                      />
+                    </div>
                     <Button
                       variant="secondary"
                       disabled={!value || map.isPending}
-                      onClick={() => map.mutate({ text: r.area_other_text, areaId: value })}
+                      onClick={() => map.mutate({ text: r.area_other_text, target: value })}
                     >
                       {m.map}
+                    </Button>
+                    <Button variant="ghost" size="sm" disabled={map.isPending} onClick={() => map.mutate({ text: r.area_other_text, target: 'new' })}>
+                      {m.createNew}
                     </Button>
                   </Card>
                 </li>

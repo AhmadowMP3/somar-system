@@ -127,3 +127,43 @@ describe('deleting a route', () => {
     expect(kept?.length).toBe(1);
   });
 });
+
+describe('«مناطق بحاجة ربط» with library stops', () => {
+  it('links a written place to a stop (creating its area) and auto-links exact name matches', async () => {
+    const stopA = await gs.from('stops').insert({ university_id: fx.universityId, name: 'دوار السياسية' }).select('id').single();
+    await gs.from('stops').insert({ university_id: fx.universityId, name: 'دوار المحافظة' });
+    const make = async (text: string) => {
+      const st = await createStudent(fx);
+      await service.from('students').update({ area_primary_id: null, area_other_text: text }).eq('id', st.id);
+      return st.id;
+    };
+    const exactStop = await make('دوار  المحافظه'); // spacing / taa marbuta differ
+    const exactArea = await make('الرجاء ');
+    const viaPicker = await make('قرب دوار السياسية');
+    const unknown = await make('مكان غير معروف');
+
+    // picking a stop in the list
+    const picked = await gs.rpc('map_area_other_text_to_stop', { p_university_id: fx.universityId, p_other_text: 'قرب دوار السياسية', p_stop_id: stopA.data?.id });
+    expect(picked.error).toBeNull();
+    expect(picked.data).toBe(1);
+    const { data: stopRow } = await service.from('stops').select('area_id, areas(name)').eq('id', stopA.data?.id as string).single();
+    expect((stopRow as unknown as { areas: { name: string } }).areas.name).toBe('دوار السياسية');
+
+    // one click for exact matches (an area, and a stop that has no area yet)
+    const auto = await gs.rpc('auto_map_area_texts', { p_university_id: fx.universityId });
+    expect(auto.error).toBeNull();
+    expect(auto.data).toEqual({ places: 2, students: 2 });
+    const { data: rows } = await service
+      .from('students')
+      .select('id, needs_area_mapping, areas:areas!students_area_primary_id_fkey(name)')
+      .in('id', [exactStop, exactArea, viaPicker, unknown]);
+    const byId = Object.fromEntries((rows ?? []).map((r) => [r.id, r as unknown as { needs_area_mapping: boolean; areas: { name: string } | null }]));
+    expect(byId[exactStop]?.areas?.name).toBe('دوار المحافظة');
+    expect(byId[exactArea]?.areas?.name).toBe('الرجاء');
+    expect(byId[viaPicker]?.areas?.name).toBe('دوار السياسية');
+    expect(byId[unknown]?.needs_area_mapping).toBe(true);
+
+    // students cannot use it
+    expect((await student.rpc('auto_map_area_texts', { p_university_id: fx.universityId })).error).not.toBeNull();
+  });
+});

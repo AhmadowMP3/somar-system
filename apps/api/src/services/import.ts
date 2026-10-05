@@ -24,6 +24,8 @@ import { provisionStudent, type StudentData } from './provisioning.js';
 
 export type ParsedSheet = { headers: string[]; rows: unknown[][] };
 
+const STOP_PREFIX = 'stop:';
+
 export function parseWorkbook(buffer: Buffer): ParsedSheet {
   let wb: XLSX.WorkBook;
   try {
@@ -96,6 +98,7 @@ async function loadRefs(db: Db, universityId: string) {
       .eq('kind', 'student'),
   ]);
   const packages = await db.from('packages').select('id, name, price').eq('university_id', universityId).eq('is_active', true);
+  const stops = await db.from('stops').select('id, name').eq('university_id', universityId).eq('is_active', true);
   if (colleges.error || areas.error || students.error || packages.error) {
     throw new ApiError(500, 'INTERNAL', undefined, (colleges.error ?? areas.error ?? students.error ?? packages.error)?.message);
   }
@@ -117,7 +120,14 @@ async function loadRefs(db: Db, universityId: string) {
   );
   return {
     colleges: (colleges.data ?? []) as RefItem[],
-    areas: (areas.data ?? []) as RefItem[],
+    // A library stop named in the area column counts as a known place: its area is created at commit
+    // (ensure_stop_areas), so the student is not sent to «مناطق بحاجة ربط». Stop ids carry a «stop:» prefix.
+    areas: [
+      ...((areas.data ?? []) as RefItem[]),
+      ...((stops.data ?? []) as RefItem[])
+        .filter((s) => !(areas.data ?? []).some((a) => foldArabic(a.name) === foldArabic(s.name)))
+        .map((s) => ({ id: `${STOP_PREFIX}${s.id}`, name: s.name })),
+    ],
     packages: (packages.data ?? []) as PackageRef[],
     existing,
   };
@@ -216,6 +226,23 @@ async function commitRows(
   }
   const collegeByKey = new Map(allColleges.map((c) => [foldArabic(c.name), c.id]));
 
+  // Stops used as areas get their area now.
+  const stopIds = [
+    ...new Set(
+      rows
+        .flatMap((r) => [r.data?.area_primary_id, r.data?.area_secondary_id])
+        .filter((id): id is string => Boolean(id?.startsWith(STOP_PREFIX)))
+        .map((id) => id.slice(STOP_PREFIX.length)),
+    ),
+  ];
+  const areaOfStop = new Map<string, string>();
+  if (stopIds.length) {
+    const { data, error } = await db.rpc('ensure_stop_areas', { p_university_id: opts.universityId, p_stop_ids: stopIds });
+    if (error) throw new ApiError(500, 'INTERNAL', undefined, error.message);
+    for (const x of (data ?? []) as { stop_id: string; area_id: string }[]) areaOfStop.set(`${STOP_PREFIX}${x.stop_id}`, x.area_id);
+  }
+  const realArea = (id: string | null) => (id?.startsWith(STOP_PREFIX) ? (areaOfStop.get(id) ?? null) : id);
+
   const toStudentData = (r: ImportRowResult): StudentData | null => {
     if (!r.data) return null;
     // no college in the sheet → the student picks it at first login
@@ -228,8 +255,8 @@ async function commitRows(
       phone_e164: r.data.phone_e164,
       college_id: collegeId,
       residence_text: r.data.residence_text,
-      area_primary_id: r.data.area_primary_id,
-      area_secondary_id: r.data.area_secondary_id,
+      area_primary_id: realArea(r.data.area_primary_id),
+      area_secondary_id: realArea(r.data.area_secondary_id),
       area_other_text: r.data.area_other_text,
       work_days: r.data.work_days,
       shift_start: r.data.shift_start,

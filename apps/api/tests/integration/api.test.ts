@@ -430,3 +430,39 @@ describe('package from «مبلغ الشريحة»', () => {
     expect(subs[nos[2]!]?.map((x) => x.package_id)).toEqual([fx.packageId]);
   });
 });
+
+describe('a library stop named in the area column', () => {
+  it('is linked through an area of the same name instead of «مناطق بحاجة ربط»', async () => {
+    await service.from('stops').insert({ university_id: fx.universityId, name: 'دوار الصالات' });
+    const no = String(500000000 + Math.floor(Math.random() * 1e7));
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(
+      wb,
+      XLSX.utils.aoa_to_sheet([
+        ['الرقم جامعي', 'الاسم الثلاثي', 'الرقم الوطني', 'المنطقة القريبة اليك'],
+        [no, 'طالب نقطة وقوف', '02010045999', 'دوار الصالات'],
+      ]),
+      'S',
+    );
+    const file = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' }) as Buffer;
+    for (const dryRun of [true, false]) {
+      const body = multipart([
+        { name: 'university_id', value: fx.universityId },
+        { name: 'dry_run', value: String(dryRun) },
+        { name: 'file', filename: 's.xlsx', contentType: 'application/octet-stream', data: file },
+      ]);
+      const res = await app.inject({ method: 'POST', url: '/api/students/import', headers: { ...body.headers, ...auth(adminToken) }, payload: body.payload });
+      expect(res.statusCode, res.body).toBe(200);
+      const json = res.json() as { needs_area_mapping: number; rows: { warnings: string[] }[] };
+      expect(json.needs_area_mapping).toBe(0);
+      expect(json.rows[0]?.warnings.some((w) => w.includes('دوار الصالات'))).toBe(false);
+    }
+    const { data } = await service
+      .from('students')
+      .select('needs_area_mapping, areas:areas!students_area_primary_id_fkey(name)')
+      .eq('university_id', fx.universityId)
+      .eq('university_student_no', no)
+      .single();
+    expect(data).toMatchObject({ needs_area_mapping: false, areas: { name: 'دوار الصالات' } });
+  });
+});
