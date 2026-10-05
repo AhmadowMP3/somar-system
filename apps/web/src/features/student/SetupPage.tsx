@@ -96,6 +96,9 @@ export const TIME_OPTIONS = Array.from({ length: (22 - 6) * 4 + 1 }, (_, i) => {
   return `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`;
 });
 
+/** Outbound times a student may choose (owner's request): 8, 10, 12 and 2 o'clock. */
+export const OUTBOUND_OPTIONS: readonly string[] = SHIFT_STARTS;
+
 /** 08:00 → «8:00 صباحاً», 14:30 → «2:30 مساءً». */
 export function timeLabel(hhmm: string): string {
   const [h = 0, m = 0] = hhmm.split(':').map(Number);
@@ -138,7 +141,12 @@ function SetupWizard() {
     const { student, schedule, weekStart } = data.data;
     setAreaId(student.area_primary_id ?? '');
     setResidence(student.residence_text ?? '');
-    setDays(toDayRows(weekStart, schedule, student.work_days));
+    // an outbound time outside the allowed list must be chosen again
+    setDays(
+      toDayRows(weekStart, schedule, student.work_days).map((d) =>
+        OUTBOUND_OPTIONS.includes(d.outbound) ? d : { ...d, outbound: '' },
+      ),
+    );
   }, [data.data]);
 
   const steps = useMemo<Step[]>(() => {
@@ -306,7 +314,13 @@ function SetupWizard() {
         {step.kind === 'times' && dayRow ? (
           <div className="space-y-3">
             {title(s.q.times(t.days[dayRow.dow] ?? ''))}
-            <TimeSelect label={s.outbound} value={dayRow.outbound} onChange={(v) => updateDay(dayRow.dow, { outbound: v })} testId={`out-${dayRow.dow}`} />
+            <TimeSelect
+              label={s.outbound}
+              value={dayRow.outbound}
+              options={OUTBOUND_OPTIONS}
+              onChange={(v) => updateDay(dayRow.dow, { outbound: v })}
+              testId={`out-${dayRow.dow}`}
+            />
             <TimeSelect label={s.return} value={dayRow.ret} onChange={(v) => updateDay(dayRow.dow, { ret: v })} testId={`ret-${dayRow.dow}`} />
           </div>
         ) : null}
@@ -447,9 +461,15 @@ function MemberStopStep({ universityId }: { universityId: string }) {
   );
 }
 
-function TimeSelect({ label, value, onChange, testId }: { label: string; value: string; onChange: (v: string) => void; testId: string }) {
+function TimeSelect({ label, value, onChange, testId, options: allowed = TIME_OPTIONS }: {
+  label: string;
+  value: string;
+  onChange: (v: string) => void;
+  testId: string;
+  options?: readonly string[];
+}) {
   const id = useId();
-  const options = value && !TIME_OPTIONS.includes(value) ? [value, ...TIME_OPTIONS] : TIME_OPTIONS;
+  const options = value && !allowed.includes(value) ? [value, ...allowed] : allowed;
   return (
     <Field label={label} htmlFor={id}>
       <Select id={id} value={value} onChange={(e) => onChange(e.target.value)} data-testid={testId}>

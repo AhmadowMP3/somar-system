@@ -98,7 +98,11 @@ test('1. student first login → forced password change → sign-out → login �
   }
   if ((await page.getByTestId('day-6').getAttribute('aria-pressed')) !== 'true') await page.getByTestId('day-6').click();
   await page.getByTestId('setup-next').click();
-  await page.getByTestId('out-6').selectOption('07:30');
+  // outbound offers only 8, 10, 12 and 2 o'clock
+  expect(await page.getByTestId('out-6').locator('option').evaluateAll((els) => els.map((e) => (e as HTMLOptionElement).value).filter(Boolean))).toEqual([
+    '08:00', '10:00', '12:00', '14:00',
+  ]);
+  await page.getByTestId('out-6').selectOption('08:00');
   await page.getByTestId('ret-6').selectOption('14:00');
   // nothing overflows sideways on a narrow phone
   expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBeLessThanOrEqual(0);
