@@ -1,6 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import {
   addDays,
+  snapDay,
+  snapOutbound,
+  snapReturn,
   checkPassword,
   damascusDate,
   formatTransportNumber,
@@ -136,5 +139,23 @@ describe('maps links and QR payloads', () => {
     expect(qrPayload(token)).toBe(`SMR:${token}`);
     expect(parseQrPayload(`SMR:${token.toUpperCase()}`)).toBe(token);
     expect(parseQrPayload('hello')).toBeNull();
+  });
+});
+
+describe('bus time slots', () => {
+  it('rounds outbound times to 8 / 10 / 12 / 2', () => {
+    expect(['06:00', '08:45', '09:00', '10:45', '10:50', '12:59', '13:00', '16:00'].map(snapOutbound)).toEqual([
+      '08:00', '08:00', '10:00', '10:00', '12:00', '12:00', '14:00', '14:00',
+    ]);
+  });
+  it('rounds return times to 11:30 / 2 / 3:30 / 4', () => {
+    expect(['10:00', '11:30', '11:45', '14:00', '14:15', '15:30', '15:45', '19:00'].map(snapReturn)).toEqual([
+      '11:30', '11:30', '14:00', '14:00', '15:30', '15:30', '16:00', '16:00',
+    ]);
+  });
+  it('keeps the return after the outbound', () => {
+    expect(snapDay('13:30', '14:00')).toEqual({ outbound: '14:00', ret: '15:30' });
+    expect(snapDay('11:00', '11:15')).toEqual({ outbound: '12:00', ret: '14:00' });
+    expect(snapDay('07:30', '12:00')).toEqual({ outbound: '08:00', ret: '14:00' });
   });
 });

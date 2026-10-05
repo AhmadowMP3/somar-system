@@ -52,7 +52,8 @@ describe('first-login setup and schedule statistics', () => {
     const byStaff = await gs.rpc('save_student_schedule', { p_student_id: a.id, p_schedule: [{ dow: 6, outbound: '08:00', return: '13:00' }] });
     expect(byStaff.error).toBeNull();
     const { data: rows } = await asA.from('student_schedule').select('dow, outbound_time, return_time');
-    expect(rows).toEqual([{ dow: 6, outbound_time: '08:00:00', return_time: '13:00:00' }]);
+    // times are rounded to the bus slots on save (13:00 → 14:00)
+    expect(rows).toEqual([{ dow: 6, outbound_time: '08:00:00', return_time: '14:00:00' }]);
     const { data: after } = await service.from('students').select('work_days').eq('id', a.id).single();
     expect(after?.work_days).toEqual([6]);
 
@@ -85,10 +86,8 @@ describe('first-login setup and schedule statistics', () => {
     expect(error).toBeNull();
     const rows = data as { dow: number; kind: string; slot: string; area_name: string; students: number }[];
     expect(rows.find((r) => r.dow === 6 && r.kind === 'outbound' && r.slot === '08:00:00')).toMatchObject({ area_name: 'الرجاء', students: 2 });
-    expect(rows.filter((r) => r.dow === 6 && r.kind === 'return').map((r) => [r.slot, r.students]).sort()).toEqual([
-      ['13:00:00', 1],
-      ['14:00:00', 1],
-    ]);
+    // both returns (13:00 and 14:00) land on the 14:00 slot
+    expect(rows.filter((r) => r.dow === 6 && r.kind === 'return').map((r) => [r.slot, r.students]).sort()).toEqual([['14:00:00', 2]]);
     const { data: progress } = await gs.rpc('setup_progress', { p_university_id: fx.universityId });
     expect(progress).toEqual({ total: 2, completed: 2 });
     const denied = await asA.rpc('schedule_stats', { p_university_id: fx.universityId });
@@ -129,5 +128,23 @@ describe('first-login questionnaire for a student imported with only name, numbe
     expect(res.error).toBeNull();
     const { data: kept } = await service.from('students').select('phone_e164, shift_start').eq('id', full.id).single();
     expect(kept).toEqual({ phone_e164: '+963944123456', shift_start: '08:00:00' });
+  });
+});
+
+describe('bus time slots on save', () => {
+  it('rounds every saved time to the slots, whatever client saved it', async () => {
+    const st = await createStudent(fx, { workDays: [1] });
+    const cases: [string, string, string, string][] = [
+      ['07:30', '13:45', '08:00:00', '14:00:00'],
+      ['09:15', '16:30', '10:00:00', '16:00:00'],
+      ['11:00', '11:15', '12:00:00', '14:00:00'],
+      ['13:30', '14:00', '14:00:00', '15:30:00'],
+    ];
+    for (const [i, [out, back, wantOut, wantBack]] of cases.entries()) {
+      const { error } = await service.from('student_schedule').upsert({ student_id: st.id, dow: i + 1, outbound_time: out, return_time: back });
+      expect(error).toBeNull();
+      const { data } = await service.from('student_schedule').select('outbound_time, return_time').eq('student_id', st.id).eq('dow', i + 1).single();
+      expect(data).toEqual({ outbound_time: wantOut, return_time: wantBack });
+    }
   });
 });

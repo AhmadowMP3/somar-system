@@ -27,7 +27,18 @@ function StatsBody({ universityId }: { universityId: string }) {
   });
   const stats = useQuery({
     queryKey: ['schedule-stats', universityId],
-    queryFn: async () => unwrap(await supabase.rpc('schedule_stats', { p_university_id: universityId })) as StatRow[],
+    // the API returns at most 1000 rows per request and the rows are sorted by day, so a single request
+    // used to cut off everything after the first days: page until the last (short) page
+    queryFn: async () => {
+      const all: StatRow[] = [];
+      for (let from = 0; ; from += 1000) {
+        const page = unwrap(
+          await supabase.rpc('schedule_stats', { p_university_id: universityId }).range(from, from + 999),
+        ) as StatRow[];
+        all.push(...page);
+        if (page.length < 1000) return all;
+      }
+    },
   });
 
   const perDay = useMemo(() => {

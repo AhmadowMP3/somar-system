@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Fragment, useEffect, useId, useMemo, useState, type FormEvent } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { normalizePhone, SHIFT_STARTS } from '@somar/shared';
+import { normalizePhone, OUTBOUND_SLOTS, RETURN_SLOTS, SHIFT_STARTS } from '@somar/shared';
 import { useAuth } from '@/app/auth';
 import { CreditFooter, Logo } from '@/components/common';
 import { Button, Card, Field, Input, Select } from '@/components/ui/primitives';
@@ -96,8 +96,9 @@ export const TIME_OPTIONS = Array.from({ length: (22 - 6) * 4 + 1 }, (_, i) => {
   return `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`;
 });
 
-/** Outbound times a student may choose (owner's request): 8, 10, 12 and 2 o'clock. */
-export const OUTBOUND_OPTIONS: readonly string[] = SHIFT_STARTS;
+/** The bus slots a student may choose: leave at 8, 10, 12 or 2; come back at 11:30, 2, 3:30 or 4. */
+export const OUTBOUND_OPTIONS: readonly string[] = OUTBOUND_SLOTS;
+export const RETURN_OPTIONS: readonly string[] = RETURN_SLOTS;
 
 /** 08:00 → «8:00 صباحاً», 14:30 → «2:30 مساءً». */
 export function timeLabel(hhmm: string): string {
@@ -141,11 +142,13 @@ function SetupWizard() {
     const { student, schedule, weekStart } = data.data;
     setAreaId(student.area_primary_id ?? '');
     setResidence(student.residence_text ?? '');
-    // an outbound time outside the allowed list must be chosen again
+    // a time outside the bus slots must be chosen again
     setDays(
-      toDayRows(weekStart, schedule, student.work_days).map((d) =>
-        OUTBOUND_OPTIONS.includes(d.outbound) ? d : { ...d, outbound: '' },
-      ),
+      toDayRows(weekStart, schedule, student.work_days).map((d) => ({
+        ...d,
+        outbound: OUTBOUND_OPTIONS.includes(d.outbound) ? d.outbound : '',
+        ret: RETURN_OPTIONS.includes(d.ret) ? d.ret : '',
+      })),
     );
   }, [data.data]);
 
@@ -321,7 +324,13 @@ function SetupWizard() {
               onChange={(v) => updateDay(dayRow.dow, { outbound: v })}
               testId={`out-${dayRow.dow}`}
             />
-            <TimeSelect label={s.return} value={dayRow.ret} onChange={(v) => updateDay(dayRow.dow, { ret: v })} testId={`ret-${dayRow.dow}`} />
+            <TimeSelect
+              label={s.return}
+              value={dayRow.ret}
+              options={RETURN_OPTIONS}
+              onChange={(v) => updateDay(dayRow.dow, { ret: v })}
+              testId={`ret-${dayRow.dow}`}
+            />
           </div>
         ) : null}
         {step.kind === 'review' ? (
