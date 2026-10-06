@@ -149,3 +149,25 @@ describe('bus time slots on save', () => {
     }
   });
 });
+
+describe('first-login questionnaire by stop', () => {
+  it('saves the chosen stop as home stop and the stop\'s area as the student\'s area', async () => {
+    const st = await createStudent(fx, { workDays: [1] });
+    const client = await signIn(st.transportNumber, st.transportNumber);
+    const stop = await service.from('stops').insert({ university_id: fx.universityId, name: 'دوار الصالات للاستبيان' }).select('id').single();
+    const off = await service.from('stops').insert({ university_id: fx.universityId, name: 'نقطة متوقفة للاستبيان', is_active: false }).select('id').single();
+    const schedule = [{ dow: 6, outbound: '08:00', return: '14:00' }];
+    const call = (stopId: unknown) => client.rpc('complete_my_setup_with_stop', { p_stop_id: stopId, p_residence: '', p_schedule: schedule });
+
+    expect((await call(off.data?.id)).error?.message).toBe('STOP_INVALID');
+    expect((await call(stop.data?.id)).error).toBeNull();
+    const { data } = await service
+      .from('students')
+      .select('home_stop_id, setup_completed_at, work_days, area:areas!students_area_primary_id_fkey(name)')
+      .eq('id', st.id)
+      .single();
+    expect(data).toMatchObject({ home_stop_id: stop.data?.id, work_days: [6], area: { name: 'دوار الصالات للاستبيان' } });
+    expect(data?.setup_completed_at).toBeTruthy();
+    expect((await call(stop.data?.id)).error?.message).toBe('SETUP_LOCKED');
+  });
+});

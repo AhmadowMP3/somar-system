@@ -54,11 +54,11 @@ type SetupData = {
     college_id: string | null;
     shift_start: string | null;
     area_primary_id: string | null;
+    home_stop_id: string | null;
     residence_text: string | null;
     work_days: number[];
   };
   schedule: ScheduleRow[];
-  areas: { id: string; name: string }[];
   colleges: { id: string; name: string }[];
   weekStart: number;
 };
@@ -68,21 +68,19 @@ function useSetupData(studentId: string | undefined, universityId: string | unde
     queryKey: ['my-setup', studentId],
     enabled: Boolean(studentId && universityId),
     queryFn: async (): Promise<SetupData> => {
-      const [student, schedule, areas, colleges, university] = await Promise.all([
+      const [student, schedule, colleges, university] = await Promise.all([
         supabase
           .from('students')
-          .select('kind, phone_e164, college_id, shift_start, area_primary_id, residence_text, work_days')
+          .select('kind, phone_e164, college_id, shift_start, area_primary_id, home_stop_id, residence_text, work_days')
           .eq('id', studentId as string)
           .single(),
         supabase.from('student_schedule').select('dow, outbound_time, return_time').eq('student_id', studentId as string),
-        supabase.from('areas').select('id, name').eq('university_id', universityId as string).eq('is_active', true).order('name'),
         supabase.from('colleges').select('id, name').eq('university_id', universityId as string).eq('is_active', true).order('name'),
         supabase.from('universities').select('week_start_dow').eq('id', universityId as string).single(),
       ]);
       return {
         student: unwrap(student) as SetupData['student'],
         schedule: unwrap(schedule) as ScheduleRow[],
-        areas: unwrap(areas) as SetupData['areas'],
         colleges: unwrap(colleges) as SetupData['colleges'],
         weekStart: (unwrap(university) as { week_start_dow: number }).week_start_dow,
       };
@@ -126,7 +124,9 @@ function SetupWizard() {
   const [phone, setPhone] = useState('');
   const [collegeId, setCollegeId] = useState('');
   const [shift, setShift] = useState('');
-  const [areaId, setAreaId] = useState('');
+  // the student's place is chosen among the stops; the area follows from the stop on the server
+  const stops = useStopOptions(me?.student?.university_id);
+  const [stopId, setStopId] = useState('');
   const [residence, setResidence] = useState('');
   const [days, setDays] = useState<DayRow[]>([]);
   const [index, setIndex] = useState(0);
@@ -136,7 +136,7 @@ function SetupWizard() {
   useEffect(() => {
     if (!data.data) return;
     const { student, schedule, weekStart } = data.data;
-    setAreaId(student.area_primary_id ?? '');
+    setStopId(student.home_stop_id ?? '');
     setResidence(student.residence_text ?? '');
     // a time outside the bus slots must be chosen again
     setDays(
@@ -165,8 +165,8 @@ function SetupWizard() {
     mutationFn: async () => {
       const p = phone.trim() ? normalizePhone(phone) : null;
       return unwrap(
-        await supabase.rpc('complete_my_setup', {
-          p_area_id: areaId,
+        await supabase.rpc('complete_my_setup_with_stop', {
+          p_stop_id: stopId,
           p_residence: residence,
           p_schedule: toSchedulePayload(days),
           p_phone: p?.ok ? p.value : null,
@@ -201,7 +201,7 @@ function SetupWizard() {
       case 'shift':
         return shift ? null : (s.errors.shift ?? null);
       case 'area':
-        return areaId ? null : (s.errors.area ?? null);
+        return stopId ? null : (s.errors.area ?? null);
       case 'days':
         return days.some((d) => d.on) ? null : (s.errors.noDays ?? null);
       case 'times':
@@ -224,7 +224,7 @@ function SetupWizard() {
     setIndex(Math.max(0, position - 1));
   };
 
-  const areaName = data.data.areas.find((a) => a.id === areaId)?.name;
+  const stopName = stops.data?.find((x) => x.id === stopId)?.name;
   const collegeName = data.data.colleges.find((c) => c.id === collegeId)?.name;
   const title = (text: string) => <span className="text-lg font-bold">{text}</span>;
 
@@ -272,11 +272,11 @@ function SetupWizard() {
         ) : null}
         {step.kind === 'area' ? (
           <Field label={title(s.q.area)} htmlFor={inputId}>
-            <Select id={inputId} value={areaId} onChange={(e) => setAreaId(e.target.value)} data-testid="setup-area">
+            <Select id={inputId} value={stopId} onChange={(e) => setStopId(e.target.value)} disabled={stops.isLoading} data-testid="setup-area">
               <option value="">{t.common.select}</option>
-              {data.data.areas.map((a) => (
-                <option key={a.id} value={a.id}>
-                  {a.name}
+              {(stops.data ?? []).map((x) => (
+                <option key={x.id} value={x.id}>
+                  {stopLabel(x)}
                 </option>
               ))}
             </Select>
@@ -353,8 +353,8 @@ function SetupWizard() {
                   <dd>{timeLabel(shift)}</dd>
                 </>
               ) : null}
-              <dt className="text-muted">{t.student.area}</dt>
-              <dd>{areaName}</dd>
+              <dt className="text-muted">{t.student.homeStop}</dt>
+              <dd>{stopName}</dd>
               {residence.trim() ? (
                 <>
                   <dt className="text-muted">{t.student.residence}</dt>

@@ -240,6 +240,8 @@ export default function StudentDetailPage() {
                       <dd className="num">{st.university_student_no}</dd>
                       <dt className="text-muted">{t.student.nationalId}</dt>
                       <dd className="num">{st.national_id ?? t.common.none}</dd>
+                      <dt className="text-muted">{t.student.homeStop}</dt>
+                      <dd>{st.home_stop?.name ?? t.common.none}</dd>
                     </>
                   )}
                   <dt className="text-muted">{t.student.phone}</dt>

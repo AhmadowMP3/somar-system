@@ -88,7 +88,7 @@ test('1. student first login → forced password change → sign-out → login �
   await page.setViewportSize({ width: 360, height: 740 });
   await page.getByTestId('setup-next').click();
   await expect(page.getByRole('alert')).toBeVisible(); // an answer is required
-  await page.getByTestId('setup-area').selectOption({ label: 'الرجاء' });
+  await page.getByTestId('setup-area').selectOption({ label: 'ساحة جامعة' });
   await page.getByTestId('setup-next').click();
   await page.getByTestId('setup-residence').fill('قرب الجامع');
   await page.getByTestId('setup-next').click();
@@ -511,7 +511,8 @@ test('15. tomorrow pickup: window from the settings, one locked choice of stop +
     await page.goto('/admin/pickups');
     await expect(page.getByTestId('pickup-summary')).toContainText('اختار 1 من أصل');
     const areas = page.getByTestId('pickup-areas');
-    await expect(areas).toContainText('بدون منطقة');
+    // grouped under the stop's area (or «بدون منطقة» when the stop has none)
+    await expect(areas.getByTestId('pickup-stop-row').filter({ hasText: 'ساحة جامعة' })).toBeVisible();
     await areas.getByTestId('pickup-stop-row').filter({ hasText: 'ساحة جامعة' }).click();
     await expect(areas).toContainText(st.transportNumber);
     const returns = page.getByTestId('pickup-returns');
