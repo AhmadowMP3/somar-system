@@ -182,8 +182,9 @@ describe('tomorrow pickup and return', () => {
     expect(error).toBeNull();
     expect(stats).toEqual([{ area_id: fx.areaIds['الرجاء'], area_name: 'الرجاء', stop_id: stopA, stop_name: 'دوار الصاخور', students: 2 }]);
     const { data: back } = await gs.rpc('pickup_return_stats', { p_university_id: fx.universityId, p_date: '2026-10-06' });
+    // «جسر الحج» was saved without an area, so it got an area of its own name (every stop is an area)
     expect(back).toEqual([
-      { return_time: '14:00:00', area_id: null, area_name: null, stop_id: stopB, stop_name: 'جسر الحج', students: 1 },
+      { return_time: '14:00:00', area_id: expect.any(String), area_name: 'جسر الحج', stop_id: stopB, stop_name: 'جسر الحج', students: 1 },
       { return_time: '16:00:00', area_id: fx.areaIds['الرجاء'], area_name: 'الرجاء', stop_id: stopA, stop_name: 'دوار الصاخور', students: 1 },
     ]);
     const { data: days } = await gs.rpc('pickup_days', { p_university_id: fx.universityId });

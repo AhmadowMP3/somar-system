@@ -167,3 +167,19 @@ describe('«مناطق بحاجة ربط» with library stops', () => {
     expect((await student.rpc('auto_map_area_texts', { p_university_id: fx.universityId })).error).not.toBeNull();
   });
 });
+
+describe('every stop is an area', () => {
+  it('a new stop without an area gets one of its name; a stop given an area keeps it', async () => {
+    const plain = await gs.from('stops').insert({ university_id: fx.universityId, name: 'مفرق الاختبار للمناطق' }).select('id').single();
+    const { data: a } = await service.from('stops').select('areas(name)').eq('id', plain.data?.id as string).single();
+    expect((a as unknown as { areas: { name: string } }).areas.name).toBe('مفرق الاختبار للمناطق');
+
+    const given = await gs
+      .from('stops')
+      .insert({ university_id: fx.universityId, name: 'نقطة بمنطقة محددة', area_id: fx.areaIds['الرجاء'] })
+      .select('id')
+      .single();
+    const { data: b } = await service.from('stops').select('areas(name)').eq('id', given.data?.id as string).single();
+    expect((b as unknown as { areas: { name: string } }).areas.name).toBe('الرجاء');
+  });
+});
