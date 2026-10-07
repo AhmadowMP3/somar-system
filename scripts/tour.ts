@@ -192,6 +192,11 @@ async function main() {
       await page.getByTestId('manual-submit').click();
       await page.getByTestId('scan-result').waitFor();
       await page.getByText('جارٍ التحقق…').waitFor({ state: 'detached' }).catch(() => undefined);
+      const confirm = page.getByTestId('scan-confirm');
+      if (await confirm.isVisible()) {
+        await confirm.click();
+        await confirm.waitFor({ state: 'detached' });
+      }
       await page
         .waitForFunction(() => { const img = document.querySelector('img[data-testid="scan-photo"]') as HTMLImageElement | null; return !img || (img.complete && img.naturalWidth > 0); }, null, { timeout: 15_000 })
         .catch(() => undefined);

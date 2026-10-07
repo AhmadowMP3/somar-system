@@ -86,16 +86,23 @@ describe('perform_scan', () => {
     expect(await scan(sup, { p_qr_token: st.qrToken, ...GEO })).toMatchObject({ ok: true, direction: 'return' });
   });
 
-  it('6-7. off-day: blocked by default; with the toggle a reason is required and recorded', async () => {
+  it('6-7. off-day: allowed without a reason, flagged as an override', async () => {
     const st = await createStudent(fx, { workDays: [1] });
     await freeze(`${SAT} 07:30`);
-    expect(await scan(sup, { p_qr_token: st.qrToken, ...GEO })).toMatchObject({ ok: false, code: 'OFFDAY_BLOCKED' });
-    await setSettings(fx, { allow_offday_override: true });
-    expect(await scan(sup, { p_qr_token: st.qrToken, ...GEO })).toMatchObject({ ok: false, code: 'OVERRIDE_REASON_REQUIRED' });
-    const ok = await scan(sup, { p_qr_token: st.qrToken, ...GEO, p_override_reason: 'امتحان استثنائي' });
+    const ok = await scan(sup, { p_qr_token: st.qrToken, ...GEO });
     expect(ok).toMatchObject({ ok: true, direction: 'outbound', offday_override: true });
     const { data } = await admin.from('scans').select('offday_override, override_reason').eq('id', ok.scan_id as string).single();
-    expect(data).toEqual({ offday_override: true, override_reason: 'امتحان استثنائي' });
+    expect(data).toEqual({ offday_override: true, override_reason: null });
+  });
+
+  it('a preview runs the checks and returns the rider without recording a scan', async () => {
+    const st = await createStudent(fx, { workDays: [1] });
+    await freeze(`${SAT} 07:30`);
+    const preview = await scan(sup, { p_qr_token: st.qrToken, ...GEO, p_preview: true });
+    expect(preview).toMatchObject({ ok: true, preview: true, scan_id: null, direction: 'outbound', offday_override: true });
+    const { count } = await admin.from('scans').select('id', { count: 'exact', head: true }).eq('student_id', st.id);
+    expect(count).toBe(0);
+    expect(await scan(sup, { p_qr_token: st.qrToken, ...GEO })).toMatchObject({ ok: true, preview: false, direction: 'outbound' });
   });
 
   it('8. outbound with remaining 0 is NO_BALANCE', async () => {

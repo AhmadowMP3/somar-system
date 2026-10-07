@@ -3,7 +3,7 @@ import { z } from 'zod';
 import { arShared, checkFullName, MEMBER_KINDS, memberInputSchema, normalizePhone, type MemberKind } from '@somar/shared';
 import { assertPermission, assertUniversityScope, authOf, clientIp, type AppContext } from '../lib/auth.js';
 import { ApiError, badRequest } from '../lib/errors.js';
-import { readMultipart } from '../lib/multipart.js';
+import { readMultipart, readRowSelection } from '../lib/multipart.js';
 import { runMemberImport } from '../services/member-import.js';
 import { provisionStudent } from '../services/provisioning.js';
 
@@ -73,6 +73,7 @@ export async function memberRoutes(app: FastifyInstance, ctx: AppContext) {
       universityId,
       kind: kind.data as MemberKind,
       buffer: file.buffer,
+      onlyRows: readRowSelection(fields),
       dryRun: fields.dry_run !== 'false',
       actorId: auth.profile.id,
       ip: clientIp(request),

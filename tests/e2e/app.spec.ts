@@ -120,7 +120,7 @@ test('1. student first login → forced password change → sign-out → login �
   await expect(page.getByTestId('remaining')).toContainText(`${uni.tripsPerWeek} من ${uni.tripsPerWeek}`);
 });
 
-test('2. supervisor manual scan: popup, X re-arms, second scan is a return with unchanged balance', async ({ page }) => {
+test('2. supervisor manual scan: verify then confirm, X re-arms, second scan is a return with unchanged balance', async ({ page }) => {
   const st = await createE2EStudent(uni, { subscribe: true, photo: true, ready: true });
   await login(page, uni.supervisorCode, STAFF_PASSWORD);
   await expect(page).toHaveURL(/\/scan$/);
@@ -133,6 +133,10 @@ test('2. supervisor manual scan: popup, X re-arms, second scan is a return with 
   await expect(popup.getByTestId('scan-photo')).toBeVisible();
   await expect(popup.getByTestId('scan-direction')).toContainText('ذهاب');
   await expect(popup.getByTestId('scan-remaining')).toHaveText(String(uni.tripsPerWeek - 1));
+  await expect(page.getByTestId('my-scans').locator('li')).toHaveCount(0);
+  await popup.getByTestId('scan-confirm').click();
+  await expect(popup.getByTestId('scan-confirm')).toBeHidden();
+  await expect(page.getByTestId('my-scans').locator('li')).toHaveCount(1);
 
   await popup.getByTestId('scan-close').click();
   await expect(popup).toBeHidden();
@@ -142,6 +146,8 @@ test('2. supervisor manual scan: popup, X re-arms, second scan is a return with 
   await page.getByTestId('manual-submit').click();
   await expect(popup.getByTestId('scan-direction')).toContainText('عودة');
   await expect(popup.getByTestId('scan-remaining')).toHaveText(String(uni.tripsPerWeek - 1));
+  await popup.getByTestId('scan-confirm').click();
+  await expect(popup.getByTestId('scan-confirm')).toBeHidden();
   await popup.getByTestId('scan-close').click();
   await expect(page.getByTestId('my-scans').locator('li')).toHaveCount(2);
 });

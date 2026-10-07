@@ -10,7 +10,7 @@ import { api, ApiClientError } from '@/lib/api';
 import { errorMessage } from '@/lib/errors';
 import { exportSheet } from '@/lib/exportSheet';
 import { cn } from '@/lib/utils';
-import { WithUniversity } from './common';
+import { defaultPicks, ImportPickBar, ImportPickBox, WithUniversity } from './common';
 
 type ImportRow = {
   row_number: number;
@@ -48,14 +48,16 @@ function ImportWizard({ universityId }: { universityId: string }) {
   const [mapping, setMapping] = useState<HeaderMapping>({});
   const [preview, setPreview] = useState<ImportResponse | null>(null);
   const [result, setResult] = useState<ImportResponse | null>(null);
+  const [picked, setPicked] = useState<Set<number>>(new Set());
   const [filter, setFilter] = useState<string>('');
   const [error, setError] = useState<string | null>(null);
 
-  const call = (dryRun: boolean, map?: HeaderMapping) => {
+  const call = (dryRun: boolean, map?: HeaderMapping, rows?: number[]) => {
     const form = new FormData();
     form.append('university_id', universityId);
     form.append('dry_run', String(dryRun));
     if (map) form.append('mapping', JSON.stringify(map));
+    if (rows) form.append('rows', JSON.stringify(rows));
     form.append('file', file as File);
     return api.post<ImportResponse>('/students/import', form);
   };
@@ -84,12 +86,13 @@ function ImportWizard({ universityId }: { universityId: string }) {
     onSuccess: (res) => {
       setError(null);
       setPreview(res);
+      setPicked(defaultPicks(res.rows));
       setStep(2);
     },
     onError: (e) => setError(errorMessage(e)),
   });
   const commit = useMutation({
-    mutationFn: () => call(false, mapping),
+    mutationFn: () => call(false, mapping, [...picked]),
     onSuccess: (res) => {
       setError(null);
       setResult(res);
@@ -218,16 +221,30 @@ function ImportWizard({ universityId }: { universityId: string }) {
               ))}
             </div>
           ) : null}
+          {step === 2 ? <ImportPickBar rows={shown.rows} picked={picked} onChange={setPicked} /> : null}
           <DataList
             rows={rows}
             rowKey={(r) => String(r.row_number)}
             cardTitle={(r) => (
               <span className="flex items-center justify-between gap-2">
-                <span>{r.student_name || t.common.none}</span>
+                <span className="flex items-center gap-2">
+                  {step === 2 ? <ImportPickBox row={r} name={r.student_name} picked={picked} onChange={setPicked} /> : null}
+                  {r.student_name || t.common.none}
+                </span>
                 <Badge tone={STATUS_TONE[r.status]}>{im.status[r.status]}</Badge>
               </span>
             )}
             columns={[
+              ...(step === 2
+                ? [
+                    {
+                      key: 'pick',
+                      header: im.pick,
+                      cell: (r: ImportRow) => <ImportPickBox row={r} name={r.student_name} picked={picked} onChange={setPicked} />,
+                      mobileHidden: true,
+                    },
+                  ]
+                : []),
               { key: 'row', header: im.row, cell: (r) => <span className="num">{r.row_number}</span> },
               { key: 'status', header: t.common.status, cell: (r) => <Badge tone={STATUS_TONE[r.status]}>{im.status[r.status]}</Badge>, mobileHidden: true },
               { key: 'name', header: t.common.name, cell: (r) => r.student_name, mobileHidden: true },
@@ -261,8 +278,8 @@ function ImportWizard({ universityId }: { universityId: string }) {
             {step === 2 ? (
               <>
                 <Button onClick={() => setStep(1)}>{t.common.back}</Button>
-                <Button variant="primary" disabled={commit.isPending || shown.summary.accepted === 0} onClick={() => commit.mutate()} data-testid="import-commit">
-                  {commit.isPending ? im.committing : im.commit}
+                <Button variant="primary" disabled={commit.isPending || picked.size === 0} onClick={() => commit.mutate()} data-testid="import-commit">
+                  {commit.isPending ? im.committing : im.commitPicked(picked.size)}
                 </Button>
               </>
             ) : (

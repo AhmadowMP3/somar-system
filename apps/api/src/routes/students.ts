@@ -13,7 +13,7 @@ import {
 import { writeAudit } from '../lib/audit.js';
 import { assertPermission, assertUniversityScope, authOf, clientIp, type AppContext } from '../lib/auth.js';
 import { ApiError, badRequest, conflict, notFound } from '../lib/errors.js';
-import { readMultipart } from '../lib/multipart.js';
+import { readMultipart, readRowSelection } from '../lib/multipart.js';
 import { runImport } from '../services/import.js';
 import { initialPassword, provisionStudent } from '../services/provisioning.js';
 
@@ -66,6 +66,7 @@ export async function studentRoutes(app: FastifyInstance, ctx: AppContext) {
       universityId,
       buffer: file.buffer,
       mapping,
+      onlyRows: readRowSelection(fields),
       dryRun,
       actorId: auth.profile.id,
       ip: clientIp(request),

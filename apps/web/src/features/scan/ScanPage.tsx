@@ -1,10 +1,10 @@
 import { BrowserQRCodeReader, type IScannerControls } from '@zxing/browser';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Camera, Flashlight, Keyboard, MapPin, MapPinOff, RefreshCw, SwitchCamera, UserRound, X } from 'lucide-react';
-import { useCallback, useEffect, useId, useRef, useState, type FormEvent } from 'react';
+import { AlertTriangle, Camera, Check, Flashlight, Keyboard, MapPin, MapPinOff, RefreshCw, SwitchCamera, UserRound, X } from 'lucide-react';
+import { useCallback, useEffect, useId, useRef, useState, type FormEvent, type ReactNode } from 'react';
 import { formatDate, formatTime, parseQrPayload, type ScanRequest, type ScanResult } from '@somar/shared';
 import { DirectionBadge, useOnline } from '@/components/common';
-import { Badge, Button, Card, CardTitle, Field, Input, Textarea } from '@/components/ui/primitives';
+import { Badge, Button, Card, CardTitle, Input } from '@/components/ui/primitives';
 import { EmptyState, QueryState } from '@/components/ui/states';
 import { t } from '@/i18n/ar';
 import { api } from '@/lib/api';
@@ -38,7 +38,7 @@ function useGeolocation() {
   return { geo, retry: () => setAttempt((a) => a + 1) };
 }
 
-type Pending = { payload: Omit<ScanRequest, 'lat' | 'lng' | 'accuracy' | 'geo_denied'> };
+type Pending = { payload: Omit<ScanRequest, 'lat' | 'lng' | 'accuracy' | 'geo_denied' | 'preview'> };
 
 export default function ScanPage() {
   const online = useOnline();
@@ -59,16 +59,15 @@ export default function ScanPage() {
   const [cameraOn, setCameraOn] = useState(false);
   const [result, setResult] = useState<ScanResult | null>(null);
   const [pending, setPending] = useState<Pending | null>(null);
-  const [overrideReason, setOverrideReason] = useState('');
   const [manual, setManual] = useState('');
   const manualId = useId();
-  const overrideId = useId();
 
+  // Two steps: a preview shows the rider's photo, and only the supervisor's confirmation records the scan.
   const scan = useMutation({
-    mutationFn: async (p: Pending & { override_reason?: string }) => {
+    mutationFn: async (p: Pending & { preview: boolean }) => {
       const body: ScanRequest = {
         ...p.payload,
-        override_reason: p.override_reason ?? null,
+        preview: p.preview,
         lat: geo.status === 'ok' ? geo.lat : null,
         lng: geo.status === 'ok' ? geo.lng : null,
         accuracy: geo.status === 'ok' ? geo.accuracy : null,
@@ -77,10 +76,11 @@ export default function ScanPage() {
       return api.post<ScanResult>('/scan', body);
     },
     onSuccess: (res, vars) => {
-      setPending(res.ok ? null : { payload: vars.payload });
+      const awaitingConfirm = res.ok && res.preview === true;
+      setPending(awaitingConfirm ? { payload: vars.payload } : null);
       setResult(res);
-      feedback(res.ok ? 'success' : 'error');
-      if (res.ok) void qc.invalidateQueries({ queryKey: ['my-scans-today'] });
+      if (!awaitingConfirm) feedback(res.ok ? 'success' : 'error');
+      if (res.ok && !res.preview) void qc.invalidateQueries({ queryKey: ['my-scans-today'] });
     },
     onError: (err) => {
       setResult({ ok: false, code: 'NETWORK', message_ar: errorMessage(err) });
@@ -91,8 +91,7 @@ export default function ScanPage() {
   const submit = useCallback(
     (payload: Pending['payload']) => {
       if (disabled || scan.isPending) return;
-      setOverrideReason('');
-      scan.mutate({ payload });
+      scan.mutate({ payload, preview: true });
     },
     [disabled, scan],
   );
@@ -185,23 +184,23 @@ export default function ScanPage() {
           result={result}
           busy={scan.isPending}
           onClose={closeResult}
-          override={
-            result && !result.ok && result.code === 'OVERRIDE_REASON_REQUIRED' && pending ? (
-              <form
-                className="mt-4 space-y-2 text-start"
-                onSubmit={(e) => {
-                  e.preventDefault();
-                  if (overrideReason.trim()) scan.mutate({ payload: pending.payload, override_reason: overrideReason.trim() });
-                }}
-              >
-                <p className="text-sm">{t.scan.overrideBody}</p>
-                <Field label={t.scan.overrideReason} htmlFor={overrideId}>
-                  <Textarea id={overrideId} value={overrideReason} onChange={(e) => setOverrideReason(e.target.value)} />
-                </Field>
-                <Button type="submit" variant="secondary" className="w-full" disabled={!overrideReason.trim()}>
-                  {t.scan.overrideSubmit}
+          confirm={
+            result?.ok && result.preview && pending ? (
+              <div className="grid grid-cols-2 gap-2 pt-2">
+                <Button variant="outline" size="lg" onClick={closeResult} data-testid="scan-reject">
+                  <X className="h-5 w-5" aria-hidden />
+                  {t.scan.rejectBoarding}
                 </Button>
-              </form>
+                <Button
+                  variant="primary"
+                  size="lg"
+                  onClick={() => scan.mutate({ payload: pending.payload, preview: false })}
+                  data-testid="scan-confirm"
+                >
+                  <Check className="h-5 w-5" aria-hidden />
+                  {t.scan.confirmBoarding}
+                </Button>
+              </div>
             ) : null
           }
         />
@@ -349,25 +348,27 @@ function ResultPopup({
   result,
   busy,
   onClose,
-  override,
+  confirm,
 }: {
   result: ScanResult | null;
   busy: boolean;
   onClose: () => void;
-  override?: React.ReactNode;
+  confirm?: ReactNode;
 }) {
   const closeRef = useRef<HTMLButtonElement>(null);
   useEffect(() => {
     closeRef.current?.focus();
   }, [result]);
   const ok = result?.ok === true;
+  const preview = result?.ok === true && result.preview === true;
   return (
     <div className="fixed inset-0 z-[70] flex items-end justify-center bg-black/60 p-3 sm:items-center" role="dialog" aria-modal="true">
       <div
         className={cn(
           'relative w-full max-w-md rounded-2xl bg-bg p-5 text-center shadow-2xl',
           result && !ok && 'border-4 border-danger',
-          ok && 'border-4 border-success',
+          ok && !preview && 'border-4 border-success',
+          preview && 'border-4 border-brand-ink',
         )}
         aria-live="assertive"
         data-testid="scan-result"
@@ -390,6 +391,14 @@ function ResultPopup({
           </p>
         ) : result.ok ? (
           <div className="space-y-3 pt-6">
+            {preview ? (
+              <div>
+                <p className="text-lg font-extrabold">{t.scan.verifyTitle}</p>
+                <p className="text-sm text-muted">{t.scan.verifyHint}</p>
+              </div>
+            ) : (
+              <p className="text-sm font-bold text-success">{t.scan.success}</p>
+            )}
             {result.student.photo_url ? (
               <img
                 src={result.student.photo_url}
@@ -415,8 +424,13 @@ function ResultPopup({
               <span data-testid="scan-direction">
                 <DirectionBadge direction={result.direction} className="px-4 py-1.5 text-lg" />
               </span>
-              {result.offday_override ? <Badge tone="warning">{t.student.override}</Badge> : null}
             </div>
+            {result.offday_override ? (
+              <p role="alert" className="flex items-center justify-center gap-2 rounded-xl bg-warning/15 p-3 font-bold text-warning" data-testid="scan-offday">
+                <AlertTriangle className="h-5 w-5 shrink-0" aria-hidden />
+                {t.scan.offdayWarning}
+              </p>
+            ) : null}
             {result.unlimited ? (
               <p className="text-lg font-extrabold text-success" data-testid="scan-remaining">
                 {t.scan.unlimited}
@@ -441,6 +455,7 @@ function ResultPopup({
                 ) : null}
               </>
             )}
+            {confirm}
           </div>
         ) : (
           <div className="space-y-2 py-6">
@@ -448,7 +463,6 @@ function ResultPopup({
             <p className="text-2xl font-extrabold text-danger" data-testid="scan-error">
               {result.message_ar || t.shared.scanCodes[result.code] || t.errors.generic}
             </p>
-            {override}
           </div>
         )}
       </div>

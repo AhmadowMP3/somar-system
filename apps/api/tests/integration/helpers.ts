@@ -172,7 +172,8 @@ export type ScanResponse = {
   quota?: number;
   used?: number;
   remaining_after?: number;
-  scan_id?: string;
+  scan_id?: string | null;
+  preview?: boolean;
   minutes_remaining?: number;
   offday_override?: boolean;
 };
