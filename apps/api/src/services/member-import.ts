@@ -23,6 +23,8 @@ export type MemberImportOptions = {
   universityId: string;
   kind: MemberKind;
   buffer: Buffer;
+  /** Sheet row numbers to import (the reviewer's ticks); every row when absent. */
+  onlyRows?: number[];
   dryRun: boolean;
   actorId: string | null;
   ip?: string | null;
@@ -66,6 +68,10 @@ export async function runMemberImport(db: Db, cfg: Config, opts: MemberImportOpt
   });
   // Lines without a name are stray continuation cells (e.g. an address split over two rows), not people.
   rows = rows.filter((r) => r.full_name);
+  if (opts.onlyRows) {
+    const picked = new Set(opts.onlyRows);
+    rows = rows.filter((r) => picked.has(r.row_number));
+  }
   rows = dedupeMemberRows(rows).map((r) => (r.status === 'created' && existing.has(r.name_key) ? { ...r, status: 'updated' as const } : r));
 
   if (!opts.dryRun) {

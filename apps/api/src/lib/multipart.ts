@@ -1,5 +1,6 @@
 import type { FastifyRequest } from 'fastify';
-import { ApiError } from './errors.js';
+import { z } from 'zod';
+import { ApiError, badRequest } from './errors.js';
 
 export type UploadedFile = { buffer: Buffer; filename: string; mimetype: string };
 
@@ -19,4 +20,16 @@ export async function readMultipart(
     }
   }
   return { fields, file };
+}
+
+const rowSelectionSchema = z.array(z.number().int().min(1)).max(20_000);
+
+/** The «rows» field of an import: a JSON array of the sheet row numbers to import, or absent for all. */
+export function readRowSelection(fields: Record<string, string>): number[] | undefined {
+  if (fields.rows === undefined || fields.rows === '') return undefined;
+  try {
+    return rowSelectionSchema.parse(JSON.parse(fields.rows));
+  } catch {
+    throw badRequest('VALIDATION');
+  }
 }

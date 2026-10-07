@@ -12,7 +12,7 @@ import { errorMessage } from '@/lib/errors';
 import { supabase, unwrap } from '@/lib/supabase';
 import { cn } from '@/lib/utils';
 import { exportSheet } from '@/lib/exportSheet';
-import { ActiveBadge, exportNamesAndNumbers, WEEK_DAYS, WithUniversity } from './common';
+import { ActiveBadge, defaultPicks, exportNamesAndNumbers, ImportPickBar, ImportPickBox, WEEK_DAYS, WithUniversity } from './common';
 
 type MemberRow = {
   id: string;
@@ -229,6 +229,7 @@ function ImportDialog({ kind, universityId, onClose }: { kind: MemberKind; unive
   const [file, setFile] = useState<File | null>(null);
   const [res, setRes] = useState<ImportResponse | null>(null);
   const [filter, setFilter] = useState('');
+  const [picked, setPicked] = useState<Set<number>>(new Set());
 
   const call = useMutation({
     mutationFn: (dryRun: boolean) => {
@@ -236,12 +237,14 @@ function ImportDialog({ kind, universityId, onClose }: { kind: MemberKind; unive
       form.append('university_id', universityId);
       form.append('kind', kind);
       form.append('dry_run', String(dryRun));
+      if (!dryRun) form.append('rows', JSON.stringify([...picked]));
       form.append('file', file as File);
       return api.post<ImportResponse>('/members/import', form);
     },
     onSuccess: (data) => {
       setRes(data);
       setFilter('');
+      if (data.dry_run) setPicked(defaultPicks(data.rows));
       if (!data.dry_run) void qc.invalidateQueries({ queryKey: ['students'] });
     },
   });
@@ -273,8 +276,8 @@ function ImportDialog({ kind, universityId, onClose }: { kind: MemberKind; unive
               {call.isPending ? im.analyzing : im.preview}
             </Button>
           ) : !done ? (
-            <Button variant="primary" disabled={call.isPending || res.summary.accepted === 0} onClick={() => call.mutate(false)} data-testid="member-import-commit">
-              {call.isPending ? im.committing : im.commit}
+            <Button variant="primary" disabled={call.isPending || picked.size === 0} onClick={() => call.mutate(false)} data-testid="member-import-commit">
+              {call.isPending ? im.committing : im.commitPicked(picked.size)}
             </Button>
           ) : null}
         </>
@@ -333,10 +336,12 @@ function ImportDialog({ kind, universityId, onClose }: { kind: MemberKind; unive
                 </button>
               ))}
             </div>
+            {!done ? <ImportPickBar rows={res.rows} picked={picked} onChange={setPicked} /> : null}
             <ul className="max-h-80 divide-y divide-border overflow-y-auto rounded-xl border border-border text-sm">
               {rows.map((r) => (
                 <li key={r.row_number} className="flex items-start justify-between gap-2 p-2">
-                  <span className="min-w-0">
+                  {!done ? <ImportPickBox row={r} name={r.full_name} picked={picked} onChange={setPicked} /> : null}
+                  <span className="min-w-0 flex-1">
                     <span className="num text-muted">{r.row_number}. </span>
                     {r.full_name || t.common.none}
                     {[...r.reasons, ...r.warnings].map((x) => (

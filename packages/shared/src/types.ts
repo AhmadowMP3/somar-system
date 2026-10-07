@@ -6,7 +6,9 @@ export type ScanMethod = 'qr' | 'manual';
 
 export type ScanSuccess = {
   ok: true;
-  scan_id: string;
+  /** A preview records nothing (scan_id is null) — the supervisor checks the photo, then confirms. */
+  preview?: boolean;
+  scan_id: string | null;
   direction: ScanDirection;
   method: ScanMethod;
   scanned_at: string;
@@ -26,6 +28,7 @@ export type ScanSuccess = {
   used: number;
   remaining_after: number | null;
   subscription_ends_on: string | null;
+  /** Today is not one of the rider's work days: allowed, but shown as a warning. */
   offday_override: boolean;
   warning: 'LOW_BALANCE' | null;
 };
@@ -47,6 +50,8 @@ export const scanRequestSchema = z.object({
   accuracy: z.number().min(0).nullish(),
   geo_denied: z.boolean().optional().default(false),
   override_reason: z.string().trim().max(500).nullish(),
+  /** Run every check and return the rider without recording the scan. */
+  preview: z.boolean().optional().default(false),
 });
 export type ScanRequest = z.infer<typeof scanRequestSchema>;
 

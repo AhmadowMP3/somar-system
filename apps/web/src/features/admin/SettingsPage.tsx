@@ -130,18 +130,6 @@ function SettingsForm({ row, inherited, target, readOnly }: { row: SettingsRow; 
           if (!readOnly) save.mutate();
         }}
       >
-        <label className="flex items-start justify-between gap-4 rounded-lg border border-border p-3">
-          <span>
-            <span className="block font-bold">{s.fields.allow_offday_override}</span>
-            <span className="text-xs text-muted">{s.offdayHint}</span>
-          </span>
-          <Switch
-            checked={form.allow_offday_override}
-            disabled={readOnly}
-            onCheckedChange={(v) => setForm({ ...form, allow_offday_override: v })}
-            data-testid="offday-toggle"
-          />
-        </label>
         <label className="flex items-center justify-between gap-4 rounded-lg border border-border p-3">
           <span className="font-bold">{s.fields.require_supervisor_geo}</span>
           <Switch checked={form.require_supervisor_geo} disabled={readOnly} onCheckedChange={(v) => setForm({ ...form, require_supervisor_geo: v })} />

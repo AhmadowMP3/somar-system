@@ -163,3 +163,73 @@ export function DayToggles({ value, onChange }: { value: number[]; onChange: (da
     </div>
   );
 }
+
+type ImportStatus = 'created' | 'updated' | 'duplicate' | 'rejected';
+type PickableRow = { row_number: number; status: ImportStatus };
+
+/** Rejected rows cannot be imported; a duplicate can be ticked to keep that copy instead of the first. */
+export const isPickable = (row: PickableRow) => row.status !== 'rejected';
+
+/** The ticks an import preview starts with: everyone importable except in-file duplicates. */
+export const defaultPicks = (rows: PickableRow[]) =>
+  new Set(rows.filter((r) => r.status === 'created' || r.status === 'updated').map((r) => r.row_number));
+
+/** The reviewer's ticks over an import preview. */
+export function ImportPickBar({
+  rows,
+  picked,
+  onChange,
+}: {
+  rows: PickableRow[];
+  picked: Set<number>;
+  onChange: (next: Set<number>) => void;
+}) {
+  const im = t.admin.import;
+  const pickable = rows.filter(isPickable);
+  return (
+    <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-border bg-bg p-3 text-sm" data-testid="import-pick-bar">
+      <span>
+        <span className="block font-bold num">{im.picked(picked.size, pickable.length)}</span>
+        <span className="text-xs text-muted">{im.pickHint}</span>
+      </span>
+      <span className="flex gap-2">
+        <Button size="sm" onClick={() => onChange(new Set(pickable.map((r) => r.row_number)))} data-testid="import-pick-all">
+          {im.pickAll}
+        </Button>
+        <Button size="sm" variant="ghost" onClick={() => onChange(new Set())} data-testid="import-pick-none">
+          {im.pickNone}
+        </Button>
+      </span>
+    </div>
+  );
+}
+
+export function ImportPickBox({
+  row,
+  name,
+  picked,
+  onChange,
+}: {
+  row: PickableRow;
+  name: string;
+  picked: Set<number>;
+  onChange: (next: Set<number>) => void;
+}) {
+  if (!isPickable(row)) return null;
+  const on = picked.has(row.row_number);
+  return (
+    <input
+      type="checkbox"
+      className="h-5 w-5 accent-brand-ink"
+      checked={on}
+      aria-label={t.admin.import.pickRow(name)}
+      onChange={() => {
+        const next = new Set(picked);
+        if (on) next.delete(row.row_number);
+        else next.add(row.row_number);
+        onChange(next);
+      }}
+      data-testid={`import-pick-${row.row_number}`}
+    />
+  );
+}

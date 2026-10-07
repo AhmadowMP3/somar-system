@@ -47,6 +47,8 @@ export type ImportOptions = {
   universityId: string;
   buffer: Buffer;
   mapping?: HeaderMapping;
+  /** Sheet row numbers to import (the reviewer's ticks); every row when absent. */
+  onlyRows?: number[];
   dryRun: boolean;
   actorId: string | null;
   ip?: string | null;
@@ -163,6 +165,11 @@ export async function runImport(db: Db, cfg: Config, opts: ImportOptions): Promi
     }
     return normalizeImportRow(i + 2, raw, { colleges: refs.colleges, areas: refs.areas, packages: refs.packages });
   });
+  // before dedupe, so un-ticking the first copy of a duplicate lets the ticked one through
+  if (opts.onlyRows) {
+    const picked = new Set(opts.onlyRows);
+    rows = rows.filter((r) => picked.has(r.row_number));
+  }
   rows = dedupeImportRows(rows).map((r) => {
     const known = r.status === 'created' && r.university_student_no ? refs.existing.get(r.university_student_no) : undefined;
     if (!known) return r;
