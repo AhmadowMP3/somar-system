@@ -46,6 +46,7 @@ const Admin = {
 };
 const CardsPrintPage = lazy(() => import('@/features/cards/CardsPrintPage'));
 const RosterPrintPage = lazy(() => import('@/features/cards/RosterPrintPage'));
+const RoutesPrintPage = lazy(() => import('@/features/cards/RoutesPrintPage'));
 
 function Page({ children }: { children: ReactNode }) {
   return <Suspense fallback={<ListSkeleton className="p-4" />}>{children}</Suspense>;
@@ -183,6 +184,7 @@ export const router = createBrowserRouter([
         children: [
           { path: '/admin/cards', element: <Allowed perm="students"><CardsPrintPage /></Allowed> },
           { path: '/admin/roster', element: <Allowed perm="students"><RosterPrintPage /></Allowed> },
+          { path: '/admin/routes/print', element: <Allowed perm="routes"><RoutesPrintPage /></Allowed> },
           {
             path: '/admin',
             element: <AdminLayout />,

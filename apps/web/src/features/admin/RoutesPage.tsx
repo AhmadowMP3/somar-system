@@ -1,5 +1,5 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { ArrowDown, ArrowUp, ChevronDown, Copy, CopyPlus, ExternalLink, Map as MapIcon, Pencil, Plus, Trash2 } from 'lucide-react';
+import { ArrowDown, ArrowUp, ChevronDown, Copy, CopyPlus, ExternalLink, FileText, Map as MapIcon, Pencil, Plus, Trash2 } from 'lucide-react';
 import { useId, useState, type FormEvent } from 'react';
 import { formatClock } from '@somar/shared';
 import { Link } from 'react-router-dom';
@@ -90,6 +90,12 @@ function RoutesBody({ universityId }: { universityId: string }) {
           <>
             <Button asChild>
               <Link to="/admin/stops">{r.manageStops}</Link>
+            </Button>
+            <Button asChild data-testid="routes-export-pdf">
+              <Link to={`/admin/routes/print?university=${universityId}`}>
+                <FileText className="h-4 w-4" aria-hidden />
+                {t.admin.exportPdf}
+              </Link>
             </Button>
             <Button variant="secondary" onClick={() => setEditingRoute('new')}>
               <Plus className="h-4 w-4" aria-hidden />
