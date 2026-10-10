@@ -23,6 +23,7 @@ export async function scanRoutes(app: FastifyInstance, ctx: AppContext) {
       p_geo_denied: body.geo_denied ?? false,
       p_override_reason: body.override_reason ?? null,
       p_preview: body.preview,
+      p_bus_id: body.bus_id ?? null,
     });
     if (error || !data) throw new ApiError(500, 'INTERNAL');
     const result = data as ScanResult;

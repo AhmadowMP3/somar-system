@@ -27,6 +27,8 @@ export const arShared = {
     NO_BALANCE: 'لا يوجد رصيد رحلات',
     INCONSISTENT_DAY: 'بيانات اليوم غير متسقة، يرجى مراجعة الإدارة',
     DAY_COMPLETE: 'تم استخدام رحلتي اليوم (ذهاب وعودة)',
+    BUS_REQUIRED: 'اختر الباص قبل المسح',
+    BUS_INVALID: 'الباص المختار غير صالح',
     NETWORK: 'تعذر الاتصال بالخادم، حاول مرة أخرى',
   } as Record<string, string>,
 

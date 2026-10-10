@@ -1,26 +1,41 @@
 import { useQuery } from '@tanstack/react-query';
-import { ChevronDown, MapPin } from 'lucide-react';
-import { useId, useMemo, useState } from 'react';
-import { formatClock, formatDate } from '@somar/shared';
-import { Badge, Button, Card, Field, Select } from '@/components/ui/primitives';
-import { EmptyState, PageHeader, QueryState } from '@/components/ui/states';
+import { ChevronDown, FileSpreadsheet, MapPin, Search } from 'lucide-react';
+import { type ReactNode, useId, useMemo, useState } from 'react';
+import { foldArabic, formatClock, formatDate } from '@somar/shared';
+import { Badge, Button, Card, Field, Input, Select } from '@/components/ui/primitives';
+import { DataList, EmptyState, PageHeader, QueryState } from '@/components/ui/states';
 import { t } from '@/i18n/ar';
+import { exportSheet } from '@/lib/exportSheet';
 import { supabase, unwrap } from '@/lib/supabase';
 import { cn } from '@/lib/utils';
 import { WithUniversity } from './common';
 
-/** stop_id is null for a stop deleted since: it is then identified by the name saved with the choice. */
+/** stop_id is null for a stop deleted since: it is then identified by the name saved with the booking. */
 type StatRow = { area_id: string | null; area_name: string | null; stop_id: string | null; stop_name: string; students: number };
+/** outbound_time is null on bookings made before the outbound time was asked. */
+type OutboundRow = StatRow & { outbound_time: string | null };
 type ReturnRow = StatRow & { return_time: string };
 type DayRow = { service_date: string; students: number };
 type AreaGroup = { key: string; name: string; total: number; stops: StatRow[] };
-/** Which students a stop line lists: waiting there in the morning, or dropped there at a return time. */
-type StopFilter = { kind: 'outbound' } | { kind: 'return'; time: string };
+/** Which students a stop line lists: boarding there at an outbound time, or dropped there at a return time. */
+type StopFilter = { kind: 'outbound'; time: string | null } | { kind: 'return'; time: string };
+type BookingRow = {
+  student_id: string;
+  outbound_time: string | null;
+  return_time: string | null;
+  stop_name: string | null;
+  return_stop_name: string | null;
+  students: { full_name: string; transport_number: string } | null;
+  stops: { name: string } | null;
+  return_stop: { name: string } | null;
+};
 
 function dayLabel(date: string): string {
   const dow = new Date(`${date}T00:00:00Z`).getUTCDay() || 7;
   return `${t.days[dow]} ${formatDate(date)}`;
 }
+
+const clockOr = (time: string | null) => formatClock(time) || t.pickup.unknown;
 
 function groupByArea(rows: StatRow[]): AreaGroup[] {
   const groups = new Map<string, AreaGroup>();
@@ -66,9 +81,10 @@ function PickupsBody({ universityId }: { universityId: string }) {
   const date = picked ?? tomorrow ?? null;
 
   const stats = useQuery({
-    queryKey: ['pickup-stats', universityId, date],
+    queryKey: ['pickup-outbound-stats', universityId, date],
     enabled: Boolean(date),
-    queryFn: async () => unwrap(await supabase.rpc('pickup_stats', { p_university_id: universityId, p_date: date as string })) as StatRow[],
+    queryFn: async () =>
+      unwrap(await supabase.rpc('pickup_outbound_stats', { p_university_id: universityId, p_date: date as string })) as OutboundRow[],
   });
 
   const options = useMemo(() => {
@@ -113,9 +129,11 @@ function PickupsBody({ universityId }: { universityId: string }) {
                 </div>
               </Card>
               <h2 className="text-lg font-extrabold text-brand-ink">{s.outbound}</h2>
-              <AreaCards areas={groupByArea(rows)} date={date} universityId={universityId} filter={{ kind: 'outbound' }} testId="pickup-areas" />
+              <OutboundSection rows={rows} date={date} universityId={universityId} />
               <h2 className="pt-2 text-lg font-extrabold text-brand-ink">{s.return}</h2>
               <ReturnSection date={date} universityId={universityId} />
+              <h2 className="pt-2 text-lg font-extrabold text-brand-ink">{s.list}</h2>
+              <BookingsList date={date} universityId={universityId} />
             </div>
           );
         }}
@@ -164,7 +182,47 @@ function AreaCards({
   );
 }
 
-/** Return choices: one block per return time, then areas and drop-off stops inside it. */
+/** A time heading with its total, then the areas and stops of that time. */
+function TimeBlock({ title, rows, children }: { title: string; rows: StatRow[]; children: ReactNode }) {
+  const total = rows.reduce((n, r) => n + r.students, 0);
+  return (
+    <section className="space-y-2">
+      <p className="flex items-center gap-2 font-extrabold">
+        <span className="num">{title}</span>
+        <Badge tone="info">
+          <span className="num">{total}</span> {t.admin.pickups.students}
+        </Badge>
+      </p>
+      {children}
+    </section>
+  );
+}
+
+/** Outbound bookings: one block per outbound time (old bookings without one last), then areas and stops. */
+function OutboundSection({ rows, date, universityId }: { rows: OutboundRow[]; date: string; universityId: string }) {
+  const s = t.admin.pickups;
+  const times = [...new Set(rows.map((r) => r.outbound_time))].sort((a, b) => (a ?? '99').localeCompare(b ?? '99'));
+  return (
+    <div className="space-y-4" data-testid="pickup-areas">
+      {times.map((time) => {
+        const slot = rows.filter((r) => r.outbound_time === time);
+        return (
+          <TimeBlock key={time ?? 'none'} title={time ? s.outboundAt(formatClock(time)) : s.noTime} rows={slot}>
+            <AreaCards
+              areas={groupByArea(slot)}
+              date={date}
+              universityId={universityId}
+              filter={{ kind: 'outbound', time }}
+              testId="pickup-outbound-areas"
+            />
+          </TimeBlock>
+        );
+      })}
+    </div>
+  );
+}
+
+/** Return bookings: one block per return time, then areas and drop-off stops inside it. */
 function ReturnSection({ date, universityId }: { date: string; universityId: string }) {
   const s = t.admin.pickups;
   const stats = useQuery({
@@ -180,15 +238,8 @@ function ReturnSection({ date, universityId }: { date: string; universityId: str
           <div className="space-y-4" data-testid="pickup-returns">
             {times.map((time) => {
               const slot = rows.filter((r) => r.return_time === time);
-              const total = slot.reduce((n, r) => n + r.students, 0);
               return (
-                <section key={time} className="space-y-2">
-                  <p className="flex items-center gap-2 font-extrabold">
-                    <span className="num">{s.returnAt(formatClock(time))}</span>
-                    <Badge tone="info">
-                      <span className="num">{total}</span> {s.students}
-                    </Badge>
-                  </p>
+                <TimeBlock key={time} title={s.returnAt(formatClock(time))} rows={slot}>
                   <AreaCards
                     areas={groupByArea(slot)}
                     date={date}
@@ -196,7 +247,7 @@ function ReturnSection({ date, universityId }: { date: string; universityId: str
                     filter={{ kind: 'return', time }}
                     testId="pickup-return-areas"
                   />
-                </section>
+                </TimeBlock>
               );
             })}
           </div>
@@ -211,7 +262,7 @@ function StopLine({ stop, date, universityId, filter }: { stop: StatRow; date: s
   const s = t.admin.pickups;
   const [open, setOpen] = useState(false);
   const people = useQuery({
-    queryKey: ['pickup-people', universityId, date, stop.stop_id, filter],
+    queryKey: ['pickup-people', universityId, date, stop.stop_id, stop.stop_name, filter],
     enabled: open,
     queryFn: async () => {
       let q = supabase
@@ -219,9 +270,10 @@ function StopLine({ stop, date, universityId, filter }: { stop: StatRow; date: s
         .select('student_id, students(full_name, transport_number)')
         .eq('university_id', universityId)
         .eq('service_date', date);
-      const [idCol, nameCol] = filter.kind === 'outbound' ? ['stop_id', 'stop_name'] : ['return_stop_id', 'return_stop_name'];
+      const [idCol, nameCol, timeCol] =
+        filter.kind === 'outbound' ? ['stop_id', 'stop_name', 'outbound_time'] : ['return_stop_id', 'return_stop_name', 'return_time'];
       q = stop.stop_id ? q.eq(idCol, stop.stop_id) : q.is(idCol, null).eq(nameCol, stop.stop_name);
-      if (filter.kind === 'return') q = q.eq('return_time', filter.time);
+      q = filter.time ? q.eq(timeCol, filter.time) : q.is(timeCol, null);
       return unwrap(await q) as unknown as { student_id: string; students: { full_name: string; transport_number: string } | null }[];
     },
   });
@@ -258,5 +310,110 @@ function StopLine({ stop, date, universityId, filter }: { stop: StatRow; date: s
         </QueryState>
       ) : null}
     </li>
+  );
+}
+
+const PAGE = 1000;
+
+/** Every booking of the day (paged past the API's row cap), earliest outbound first. */
+async function fetchBookings(universityId: string, date: string): Promise<BookingRow[]> {
+  const all: BookingRow[] = [];
+  for (let from = 0; ; from += PAGE) {
+    const page = unwrap(
+      await supabase
+        .from('pickup_choices')
+        .select(
+          'student_id, outbound_time, return_time, stop_name, return_stop_name, students(full_name, transport_number), stops!pickup_choices_stop_id_fkey(name), return_stop:stops!pickup_choices_return_stop_id_fkey(name)',
+        )
+        .eq('university_id', universityId)
+        .eq('service_date', date)
+        .order('student_id')
+        .range(from, from + PAGE - 1),
+    ) as unknown as BookingRow[];
+    all.push(...page);
+    if (page.length < PAGE) break;
+  }
+  return all.sort(
+    (a, b) =>
+      (a.outbound_time ?? '99').localeCompare(b.outbound_time ?? '99') ||
+      (a.students?.full_name ?? '').localeCompare(b.students?.full_name ?? '', 'ar'),
+  );
+}
+
+function BookingsList({ date, universityId }: { date: string; universityId: string }) {
+  const s = t.admin.pickups;
+  const c = s.columns;
+  const searchId = useId();
+  const [search, setSearch] = useState('');
+  const bookings = useQuery({
+    queryKey: ['pickup-bookings', universityId, date],
+    queryFn: () => fetchBookings(universityId, date),
+  });
+  const stopOf = (r: BookingRow) => r.stops?.name ?? r.stop_name ?? t.pickup.unknown;
+  const returnStopOf = (r: BookingRow) => r.return_stop?.name ?? r.return_stop_name ?? t.pickup.unknown;
+
+  const exportRows = (rows: BookingRow[]) =>
+    exportSheet(
+      `${s.sheet}-${date}`,
+      rows.map((r) => ({
+        [c.name]: r.students?.full_name ?? '',
+        [c.transport]: r.students?.transport_number ?? '',
+        [c.outboundTime]: clockOr(r.outbound_time),
+        [c.outboundStop]: stopOf(r),
+        [c.returnTime]: clockOr(r.return_time),
+        [c.returnStop]: returnStopOf(r),
+      })),
+    );
+
+  return (
+    <QueryState query={bookings}>
+      {(all) => {
+        const q = foldArabic(search);
+        const rows = q
+          ? all.filter((r) => foldArabic(`${r.students?.full_name ?? ''} ${r.students?.transport_number ?? ''}`).includes(q))
+          : all;
+        return (
+          <div className="space-y-3" data-testid="pickup-bookings">
+            <div className="flex flex-wrap items-end gap-3">
+              <Field label={s.search} htmlFor={searchId} className="min-w-[220px] flex-1">
+                <div className="relative">
+                  <Input id={searchId} placeholder={s.search} value={search} onChange={(e) => setSearch(e.target.value)} className="ps-9" data-testid="pickup-bookings-search" />
+                  <Search className="pointer-events-none absolute start-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted" aria-hidden />
+                </div>
+              </Field>
+              <Button variant="outline" onClick={() => exportRows(rows)} disabled={!rows.length} data-testid="pickup-bookings-export">
+                <FileSpreadsheet className="h-4 w-4" aria-hidden />
+                {s.export}
+              </Button>
+            </div>
+            {rows.length ? (
+              <DataList
+                rows={rows}
+                rowKey={(r) => r.student_id}
+                cardTitle={(r) => r.students?.full_name}
+                columns={[
+                  { key: 'name', header: c.name, cell: (r) => r.students?.full_name, mobileHidden: true },
+                  {
+                    key: 'transport',
+                    header: c.transport,
+                    cell: (r) => (
+                      <span className="num font-mono" dir="ltr">
+                        {r.students?.transport_number}
+                      </span>
+                    ),
+                  },
+                  { key: 'outboundTime', header: c.outboundTime, cell: (r) => <span className="num">{clockOr(r.outbound_time)}</span> },
+                  { key: 'outboundStop', header: c.outboundStop, cell: stopOf },
+                  { key: 'returnTime', header: c.returnTime, cell: (r) => <span className="num">{clockOr(r.return_time)}</span> },
+                  { key: 'returnStop', header: c.returnStop, cell: returnStopOf },
+                ]}
+              />
+            ) : (
+              <p className="text-sm text-muted">{s.noMatch}</p>
+            )}
+          </div>
+        );
+      }}
+    </QueryState>
   );
 }

@@ -56,6 +56,7 @@ type ScanRow = {
   cancelled_at: string | null;
   cancel_reason: string | null;
   remaining_after: number;
+  bus_number: string | null;
 };
 
 type Action =
@@ -113,7 +114,7 @@ export default function StudentDetailPage() {
       unwrap(
         await supabase
           .from('scans')
-          .select('id, scanned_at, direction, method, offday_override, override_reason, cancelled_at, cancel_reason, remaining_after')
+          .select('id, scanned_at, direction, method, offday_override, override_reason, cancelled_at, cancel_reason, remaining_after, bus_number')
           .eq('student_id', id)
           .order('scanned_at', { ascending: false })
           .limit(100),
@@ -414,6 +415,11 @@ export default function StudentDetailPage() {
                             <span className="flex items-center gap-2">
                               <DirectionBadge direction={sc.direction} />
                               {sc.method === 'manual' ? <Badge>{t.student.manual}</Badge> : null}
+                              {sc.bus_number ? (
+                                <Badge>
+                                  {t.admin.scans.bus} <span className="num">{sc.bus_number}</span>
+                                </Badge>
+                              ) : null}
                               {sc.offday_override ? <Badge tone="warning">{t.student.override}</Badge> : null}
                               {sc.cancelled_at ? <Badge tone="danger">{t.admin.scans.cancelled}</Badge> : null}
                             </span>

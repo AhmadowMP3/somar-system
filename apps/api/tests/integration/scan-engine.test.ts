@@ -4,6 +4,7 @@ import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 import {
   balance,
   closeDb,
+  createBus,
   createStaff,
   createStudent,
   createUniversity,
@@ -11,6 +12,7 @@ import {
   freeze,
   GEO,
   scan,
+  service,
   setSettings,
   unfreeze,
   type Fixture,
@@ -183,5 +185,142 @@ describe('perform_scan', () => {
     const { signIn } = await import('./helpers.js');
     const client = await signIn(st.transportNumber, st.transportNumber);
     expect(await scan(client, { p_qr_token: st.qrToken, ...GEO })).toMatchObject({ ok: false, code: 'FORBIDDEN' });
+  });
+});
+
+describe('perform_scan with buses', () => {
+  let withBuses: Fixture;
+  let busSup: SupabaseClient;
+  let busAdmin: SupabaseClient;
+
+  beforeAll(async () => {
+    withBuses = await createUniversity();
+    busSup = (await createStaff(withBuses, 'supervisor')).client;
+    busAdmin = (await createStaff(withBuses, 'admin')).client;
+  });
+
+  afterAll(async () => {
+    await destroyUniversity(withBuses);
+  });
+
+  it('a university with an active bus requires one (preview too): BUS_REQUIRED', async () => {
+    await createBus(withBuses);
+    const st = await createStudent(withBuses);
+    await freeze(`${SAT} 07:30`);
+    expect(await scan(busSup, { p_qr_token: st.qrToken, ...GEO, p_preview: true })).toMatchObject({ ok: false, code: 'BUS_REQUIRED' });
+    expect(await scan(busSup, { p_qr_token: st.qrToken, ...GEO })).toMatchObject({ ok: false, code: 'BUS_REQUIRED' });
+  });
+
+  it('an unknown, inactive or other-university bus is BUS_INVALID', async () => {
+    const st = await createStudent(withBuses);
+    const inactive = await createBus(withBuses, { active: false });
+    const foreign = await createBus(other);
+    await freeze(`${SAT} 07:30`);
+    for (const busId of [randomUUID(), inactive.id, foreign.id]) {
+      expect(await scan(busSup, { p_qr_token: st.qrToken, ...GEO, p_bus_id: busId, p_preview: true })).toMatchObject({
+        ok: false,
+        code: 'BUS_INVALID',
+      });
+      expect(await scan(busSup, { p_qr_token: st.qrToken, ...GEO, p_bus_id: busId })).toMatchObject({ ok: false, code: 'BUS_INVALID' });
+    }
+  });
+
+  it('a valid bus is stored on the scan with a number snapshot that survives deleting the bus', async () => {
+    const bus = await createBus(withBuses, { seats: 12 });
+    const st = await createStudent(withBuses);
+    await freeze(`${SAT} 07:30`);
+    const preview = await scan(busSup, { p_qr_token: st.qrToken, ...GEO, p_bus_id: bus.id, p_preview: true });
+    expect(preview).toMatchObject({ ok: true, preview: true, bus: { id: bus.id, bus_number: bus.bus_number, seats: 12, boarded: 0 } });
+    const res = await scan(busSup, { p_qr_token: st.qrToken, ...GEO, p_bus_id: bus.id });
+    expect(res).toMatchObject({ ok: true, direction: 'outbound', bus: { id: bus.id, bus_number: bus.bus_number, seats: 12, boarded: 1 } });
+    const { data } = await busAdmin.from('scans').select('bus_id, bus_number').eq('id', res.scan_id as string).single();
+    expect(data).toEqual({ bus_id: bus.id, bus_number: bus.bus_number });
+
+    const { data: stats, error } = await busAdmin.rpc('bus_day_stats', { p_university_id: withBuses.universityId, p_date: SAT });
+    expect(error).toBeNull();
+    expect((stats as { bus_id: string; outbound_count: number; return_count: number }[]).find((r) => r.bus_id === bus.id)).toMatchObject({
+      outbound_count: 1,
+      return_count: 0,
+    });
+    const { error: supErr } = await busSup.rpc('bus_day_stats', { p_university_id: withBuses.universityId, p_date: SAT });
+    expect(supErr?.message).toBe('FORBIDDEN');
+
+    await service.from('buses').delete().eq('id', bus.id);
+    const { data: after } = await busAdmin.from('scans').select('bus_id, bus_number').eq('id', res.scan_id as string).single();
+    expect(after).toEqual({ bus_id: null, bus_number: bus.bus_number });
+  });
+
+  it('supervisors see the active buses of their own university only', async () => {
+    const { data } = await busSup.from('buses').select('university_id, is_active');
+    expect((data ?? []).length).toBeGreaterThan(0);
+    expect((data ?? []).every((b) => b.university_id === withBuses.universityId && b.is_active)).toBe(true);
+    const { error } = await busSup.from('buses').insert({ university_id: withBuses.universityId, bus_number: 'X', plate_number: 'X', seats: 1 });
+    expect(error).not.toBeNull();
+  });
+
+  it('a university without buses scans without one', async () => {
+    const st = await createStudent(fx);
+    await freeze(`${SAT} 07:30`);
+    const res = await scan(sup, { p_qr_token: st.qrToken, ...GEO });
+    expect(res).toMatchObject({ ok: true, direction: 'outbound', bus: null });
+    const { data } = await admin.from('scans').select('bus_id, bus_number').eq('id', res.scan_id as string).single();
+    expect(data).toEqual({ bus_id: null, bus_number: null });
+  });
+});
+
+describe('perform_scan shows the seat booking', () => {
+  let boardStop: string;
+  let dropStop: string;
+
+  beforeAll(async () => {
+    const { data } = await service
+      .from('stops')
+      .insert([
+        { university_id: fx.universityId, name: 'دوار الشفاء' },
+        { university_id: fx.universityId, name: 'باب الفرج' },
+      ])
+      .select('id, name');
+    boardStop = (data ?? []).find((s) => s.name === 'دوار الشفاء')?.id as string;
+    dropStop = (data ?? []).find((s) => s.name === 'باب الفرج')?.id as string;
+  });
+
+  it('outbound shows the booked outbound time and stop, return the return time and drop-off (preview and confirmed)', async () => {
+    const st = await createStudent(fx);
+    await service.from('pickup_choices').insert({
+      student_id: st.id,
+      service_date: SAT,
+      university_id: fx.universityId,
+      outbound_time: '10:00',
+      stop_id: boardStop,
+      return_time: '14:00',
+      return_stop_id: dropStop,
+    });
+    await freeze(`${SAT} 09:50`);
+    const outbound = { booked: true, time: '10:00', stop_name: 'دوار الشفاء' };
+    expect(await scan(sup, { p_qr_token: st.qrToken, ...GEO, p_preview: true })).toMatchObject({ ok: true, booking: outbound });
+    expect(await scan(sup, { p_qr_token: st.qrToken, ...GEO })).toMatchObject({ ok: true, direction: 'outbound', booking: outbound });
+    await freeze(`${SAT} 14:05`);
+    expect(await scan(sup, { p_qr_token: st.qrToken, ...GEO })).toMatchObject({
+      ok: true,
+      direction: 'return',
+      booking: { booked: true, time: '14:00', stop_name: 'باب الفرج' },
+    });
+  });
+
+  it('no booking for today is reported, and does not block the scan', async () => {
+    const st = await createStudent(fx);
+    // a booking for another day does not count
+    await service.from('pickup_choices').insert({
+      student_id: st.id,
+      service_date: '2026-10-04',
+      university_id: fx.universityId,
+      outbound_time: '08:00',
+      stop_id: boardStop,
+      return_time: '11:30',
+      return_stop_id: dropStop,
+    });
+    await freeze(`${SAT} 07:30`);
+    expect(await scan(sup, { p_qr_token: st.qrToken, ...GEO, p_preview: true })).toMatchObject({ ok: true, booking: { booked: false } });
+    expect(await scan(sup, { p_qr_token: st.qrToken, ...GEO })).toMatchObject({ ok: true, direction: 'outbound', booking: { booked: false } });
   });
 });

@@ -9,7 +9,9 @@ import { t } from '@/i18n/ar';
 import { api } from '@/lib/api';
 import { errorMessage } from '@/lib/errors';
 import { supabase } from '@/lib/supabase';
-import { useIsAdmin } from './common';
+import { useIsAdmin, type RiderKind } from './common';
+
+type KindCounts = { total: number; active: number; scans_today_outbound: number; scans_today_return: number };
 
 type DashboardData = {
   students_total: number;
@@ -20,6 +22,7 @@ type DashboardData = {
   subscriptions_expiring: number;
   students_no_photo: number;
   needs_area_mapping: number;
+  by_kind: Record<RiderKind, KindCounts>;
   chart: { day: string; outbound: number; return: number }[];
 };
 
@@ -36,6 +39,35 @@ function Kpi({ label, value, to }: { label: string; value: React.ReactNode; to?:
     </Link>
   ) : (
     body
+  );
+}
+
+const KINDS: RiderKind[] = ['student', 'doctor', 'employee'];
+const KIND_LIST: Record<RiderKind, string> = { student: '/admin/students', doctor: '/admin/doctors', employee: '/admin/employees' };
+
+function KindSection({ kind, counts }: { kind: RiderKind; counts: KindCounts }) {
+  const d = t.admin.dashboard;
+  return (
+    <section aria-labelledby={`dash-${kind}`} data-testid={`dashboard-${kind}`}>
+      <h2 id={`dash-${kind}`} className="mb-2 text-base font-bold">
+        {d.kinds[kind]}
+      </h2>
+      <div className="grid grid-cols-2 gap-3 md:grid-cols-3">
+        <Kpi label={d.total} value={counts.total} to={KIND_LIST[kind]} />
+        <Kpi label={d.active} value={counts.active} to={KIND_LIST[kind]} />
+        <Kpi
+          label={d.scansToday}
+          value={
+            <>
+              {counts.scans_today_outbound}
+              <span className="text-muted"> / </span>
+              {counts.scans_today_return}
+            </>
+          }
+          to="/admin/scans"
+        />
+      </div>
+    </section>
   );
 }
 
@@ -118,25 +150,20 @@ export default function DashboardPage() {
       <QueryState query={query} skeleton={<CardsSkeleton count={8} />}>
         {(data) => (
           <div className="space-y-4">
-            <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
-              <Kpi label={d.students} value={data.students_total} to="/admin/students" />
-              <Kpi label={d.activeStudents} value={data.students_active} to="/admin/students" />
-              <Kpi
-                label={d.scansToday}
-                value={
-                  <>
-                    {data.scans_today_outbound}
-                    <span className="text-muted"> / </span>
-                    {data.scans_today_return}
-                  </>
-                }
-                to="/admin/scans"
-              />
-              <Kpi label={d.noBalance} value={data.students_no_balance} to="/admin/students?balance=zero" />
-              <Kpi label={d.expiring} value={data.subscriptions_expiring} />
-              <Kpi label={d.noPhoto} value={data.students_no_photo} to="/admin/students?photo=no" />
-              <Kpi label={d.needsMapping} value={data.needs_area_mapping} to="/admin/areas/mapping" />
-            </div>
+            {KINDS.map((k) => (
+              <KindSection key={k} kind={k} counts={data.by_kind[k]} />
+            ))}
+            <section aria-labelledby="dash-alerts">
+              <h2 id="dash-alerts" className="mb-2 text-base font-bold">
+                {d.alerts}
+              </h2>
+              <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+                <Kpi label={d.noBalance} value={data.students_no_balance} to="/admin/students?balance=zero" />
+                <Kpi label={d.expiring} value={data.subscriptions_expiring} />
+                <Kpi label={d.noPhoto} value={data.students_no_photo} to="/admin/students?photo=no" />
+                <Kpi label={d.needsMapping} value={data.needs_area_mapping} to="/admin/areas/mapping" />
+              </div>
+            </section>
             <Card>
               <CardTitle>{d.chartTitle}</CardTitle>
               <ScanChart data={data.chart ?? []} />

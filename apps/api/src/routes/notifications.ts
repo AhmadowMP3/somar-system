@@ -64,6 +64,19 @@ export async function notificationRoutes(app: FastifyInstance, ctx: AppContext &
         .eq('students.is_active', true);
       if (error) throw new ApiError(500, 'INTERNAL');
       studentIds = (data ?? []).map((r) => r.student_id as string);
+    } else if (a.kind === 'students') {
+      // only this university's active students among the picked ids
+      const picked = [...new Set(a.student_ids)];
+      for (let i = 0; i < picked.length; i += 200) {
+        const { data, error } = await db
+          .from('students')
+          .select('id')
+          .eq('university_id', input.university_id)
+          .eq('is_active', true)
+          .in('id', picked.slice(i, i + 200));
+        if (error) throw new ApiError(500, 'INTERNAL');
+        studentIds.push(...(data ?? []).map((r) => r.id as string));
+      }
     } else {
       let q = db.from('students').select('id').eq('university_id', input.university_id).eq('is_active', true);
       if (a.kind === 'college') q = q.eq('college_id', a.college_id);
@@ -74,6 +87,8 @@ export async function notificationRoutes(app: FastifyInstance, ctx: AppContext &
     }
     studentIds = [...new Set(studentIds)];
     if (!studentIds.length) throw badRequest('NO_RECIPIENTS');
+    // a picked list is stored as its size, not thousands of ids on every row
+    const audience = a.kind === 'students' ? { kind: 'students', count: studentIds.length } : a;
 
     const { data: broadcast, error: bErr } = await db
       .from('broadcasts')
@@ -81,7 +96,7 @@ export async function notificationRoutes(app: FastifyInstance, ctx: AppContext &
         university_id: input.university_id,
         title: input.title,
         body: input.body,
-        audience: input.audience,
+        audience,
         recipients: studentIds.length,
         created_by: auth.profile.id,
       })
@@ -94,7 +109,7 @@ export async function notificationRoutes(app: FastifyInstance, ctx: AppContext &
         studentIds.slice(i, i + 500).map((sid) => ({
           university_id: input.university_id,
           student_id: sid,
-          audience: input.audience,
+          audience,
           type: 'BROADCAST',
           title: input.title,
           body: input.body,
@@ -110,7 +125,7 @@ export async function notificationRoutes(app: FastifyInstance, ctx: AppContext &
       action: 'broadcast.send',
       entity: 'broadcasts',
       entityId: broadcast.id as string,
-      after: { title: input.title, audience: input.audience, recipients: studentIds.length },
+      after: { title: input.title, audience, recipients: studentIds.length },
       ip: clientIp(request),
     });
     void push.dispatchPending().catch((err: unknown) => request.log.error(err));
