@@ -105,9 +105,13 @@ function ImportWizard({ universityId }: { universityId: string }) {
   const missingRequired = IMPORT_FIELDS.some((f) => f.required && !mapping[f.key]);
   const shown = result ?? preview;
   const rows = useMemo(() => (shown?.rows ?? []).filter((r) => !filter || r.status === filter), [shown, filter]);
+  // rejected rows cannot be picked, so the commit result usually has none: keep the preview's for the export
+  const rejected = useMemo(
+    () => (result?.summary.rejected ? result : preview)?.rows.filter((r) => r.status === 'rejected') ?? [],
+    [result, preview],
+  );
 
   const exportRejected = () => {
-    const rejected = (result ?? preview)?.rows.filter((r) => r.status === 'rejected') ?? [];
     exportSheet(
       im.rejectedFileName,
       rejected.map((r) => ({
@@ -312,7 +316,7 @@ function ImportWizard({ universityId }: { universityId: string }) {
                     <Download className="h-4 w-4" aria-hidden />
                     {t.admin.exportNames}
                   </Button>
-                  <Button variant="secondary" disabled={shown.summary.rejected === 0} onClick={exportRejected} data-testid="export-rejected">
+                  <Button variant="secondary" disabled={rejected.length === 0} onClick={exportRejected} data-testid="export-rejected">
                     <Download className="h-4 w-4" aria-hidden />
                     {im.exportRejected}
                   </Button>

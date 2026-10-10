@@ -31,7 +31,16 @@ export type ScanSuccess = {
   /** Today is not one of the rider's work days: allowed, but shown as a warning. */
   offday_override: boolean;
   warning: 'LOW_BALANCE' | null;
+  /** The bus chosen before scanning; boarded = riders on it today in this direction (this one once recorded). */
+  bus?: ScanBus | null;
+  /** Today's seat booking for this scan's direction; never blocks the scan. */
+  booking?: ScanBooking;
 };
+
+export type ScanBus = { id: string; bus_number: string; plate_number: string; seats: number; boarded: number };
+
+/** time is HH:MM (null on a booking made before outbound times were asked). */
+export type ScanBooking = { booked: true; time: string | null; stop_name: string | null } | { booked: false };
 
 export type ScanFailure = {
   ok: false;
@@ -52,6 +61,8 @@ export const scanRequestSchema = z.object({
   override_reason: z.string().trim().max(500).nullish(),
   /** Run every check and return the rider without recording the scan. */
   preview: z.boolean().optional().default(false),
+  /** The bus the supervisor is on; required once the rider's university has an active bus. */
+  bus_id: z.string().uuid().nullish(),
 });
 export type ScanRequest = z.infer<typeof scanRequestSchema>;
 
@@ -98,6 +109,8 @@ export const broadcastSchema = z.object({
     z.object({ kind: z.literal('college'), college_id: z.string().uuid() }),
     z.object({ kind: z.literal('package'), package_id: z.string().uuid() }),
     z.object({ kind: z.literal('student'), student_id: z.string().uuid() }),
+    // students picked on the students list
+    z.object({ kind: z.literal('students'), student_ids: z.array(z.string().uuid()).min(1).max(10000) }),
   ]),
 });
 export type BroadcastInput = z.infer<typeof broadcastSchema>;

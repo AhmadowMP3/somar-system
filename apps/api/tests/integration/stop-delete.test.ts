@@ -78,6 +78,9 @@ describe('deleting stops', () => {
     expect((await staff.rpc('delete_stop', { p_stop_id: id })).data).toEqual({ deleted: true, routes: [] });
     const { data: stats } = await staff.rpc('pickup_stats', { p_university_id: fx.universityId, p_date: '2026-10-06' });
     expect(stats).toEqual([{ area_id: null, area_name: null, stop_id: null, stop_name: 'نقطة أرشيف', students: 1 }]);
+    // a booking from before outbound times were asked has none
+    const { data: outbound } = await staff.rpc('pickup_outbound_stats', { p_university_id: fx.universityId, p_date: '2026-10-06' });
+    expect(outbound).toEqual([{ outbound_time: null, area_id: null, area_name: null, stop_id: null, stop_name: 'نقطة أرشيف', students: 1 }]);
     const { data: back } = await staff.rpc('pickup_return_stats', { p_university_id: fx.universityId, p_date: '2026-10-06' });
     expect(back).toEqual([{ return_time: '14:00:00', area_id: null, area_name: null, stop_id: null, stop_name: 'نقطة أرشيف', students: 1 }]);
   });

@@ -180,7 +180,7 @@ function NotificationsBody({ universityId }: { universityId: string }) {
                   <div className="flex flex-wrap items-center justify-between gap-2">
                     <p className="font-bold">{b.title}</p>
                     <span className="flex items-center gap-2 text-xs">
-                      <Badge tone="info">{n.audiences[b.audience.kind]}</Badge>
+                      <Badge tone="info">{n.audiences[b.audience.kind] ?? n.audienceSelected}</Badge>
                       <Badge>
                         {n.recipients}: <span className="num">{b.recipients}</span>
                       </Badge>

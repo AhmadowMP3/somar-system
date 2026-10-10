@@ -1,15 +1,27 @@
 import { BrowserQRCodeReader, type IScannerControls } from '@zxing/browser';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { AlertTriangle, Camera, Check, Flashlight, Keyboard, MapPin, MapPinOff, RefreshCw, SwitchCamera, UserRound, X } from 'lucide-react';
+import { AlertTriangle, Bus, CalendarCheck, Camera, Check, Flashlight, Keyboard, MapPin, MapPinOff, RefreshCw, SwitchCamera, UserRound, X } from 'lucide-react';
 import { useCallback, useEffect, useId, useRef, useState, type FormEvent, type ReactNode } from 'react';
-import { formatDate, formatTime, parseQrPayload, type ScanRequest, type ScanResult } from '@somar/shared';
-import { DirectionBadge, useOnline } from '@/components/common';
-import { Badge, Button, Card, CardTitle, Input } from '@/components/ui/primitives';
+import {
+  damascusDate,
+  formatClock,
+  formatDate,
+  formatTime,
+  parseQrPayload,
+  type ScanBooking,
+  type ScanDirection,
+  type ScanRequest,
+  type ScanResult,
+} from '@somar/shared';
+import { useAuth, useScope } from '@/app/auth';
+import { DirectionBadge, UniversityPicker, useOnline } from '@/components/common';
+import { Badge, Button, Card, CardTitle, Input, Select } from '@/components/ui/primitives';
 import { EmptyState, QueryState } from '@/components/ui/states';
 import { t } from '@/i18n/ar';
 import { api } from '@/lib/api';
 import { errorMessage } from '@/lib/errors';
 import { feedback, unlockAudio } from '@/lib/feedback';
+import { safeStorage } from '@/lib/pwa';
 import { supabase, unwrap } from '@/lib/supabase';
 import { cn } from '@/lib/utils';
 
@@ -40,6 +52,64 @@ function useGeolocation() {
 
 type Pending = { payload: Omit<ScanRequest, 'lat' | 'lng' | 'accuracy' | 'geo_denied' | 'preview'> };
 
+type BusOption = { id: string; bus_number: string; plate_number: string; seats: number };
+
+const busStorage = safeStorage();
+
+/** The bus this supervisor is on: active buses of the university, the pick kept for the current Damascus day. */
+function useScanBus() {
+  const { session } = useAuth();
+  const { universityId } = useScope();
+  const storageKey = `somar.scan.bus.${session?.user.id ?? ''}`;
+  const today = damascusDate();
+  const buses = useQuery({
+    queryKey: ['scan-buses', universityId],
+    enabled: Boolean(universityId),
+    queryFn: async () =>
+      unwrap(
+        await supabase
+          .from('buses')
+          .select('id, bus_number, plate_number, seats')
+          .eq('university_id', universityId ?? '')
+          .eq('is_active', true)
+          .order('bus_number'),
+      ) as BusOption[],
+  });
+  const [pick, setPick] = useState<{ date: string; busId: string | null }>(() => {
+    try {
+      const saved = JSON.parse(busStorage.get(storageKey) ?? 'null') as { date?: string; busId?: string | null } | null;
+      return { date: saved?.date ?? today, busId: saved?.busId ?? null };
+    } catch {
+      return { date: today, busId: null };
+    }
+  });
+  // the page is often left open overnight; re-render each minute so yesterday's pick drops out
+  const [, setTick] = useState(0);
+  useEffect(() => {
+    const id = setInterval(() => setTick((n) => n + 1), 60_000);
+    return () => clearInterval(id);
+  }, []);
+  const list = buses.data ?? [];
+  // a bus deactivated or deleted since it was picked has to be picked again
+  const bus = pick.date === today ? (list.find((b) => b.id === pick.busId) ?? null) : null;
+  const choose = (busId: string | null) => {
+    const date = damascusDate();
+    setPick({ date, busId });
+    busStorage.set(storageKey, JSON.stringify({ date, busId }));
+  };
+  // until the list loads (or after it fails) we cannot tell whether a bus is required
+  const loading = Boolean(universityId) && buses.isPending;
+  return {
+    buses: list,
+    bus,
+    choose,
+    query: buses,
+    blocked: loading || buses.isError || (list.length > 0 && !bus),
+    /** Checked right before a scan: false when the day changed since the last render. */
+    isCurrent: () => pick.date === damascusDate(),
+  };
+}
+
 export default function ScanPage() {
   const online = useOnline();
   const { geo, retry: retryGeo } = useGeolocation();
@@ -54,7 +124,9 @@ export default function ScanPage() {
   });
   const requireGeo = settings.data?.require_supervisor_geo ?? true;
   const geoBlocked = requireGeo && geo.status !== 'ok';
-  const disabled = !online || geoBlocked;
+  const { buses, bus, choose: chooseBus, query: busQuery, blocked: busBlocked, isCurrent: busIsCurrent } = useScanBus();
+  const { isAdmin, universities } = useScope();
+  const disabled = !online || geoBlocked || busBlocked;
 
   const [cameraOn, setCameraOn] = useState(false);
   const [result, setResult] = useState<ScanResult | null>(null);
@@ -81,6 +153,11 @@ export default function ScanPage() {
       setResult(res);
       if (!awaitingConfirm) feedback(res.ok ? 'success' : 'error');
       if (res.ok && !res.preview) void qc.invalidateQueries({ queryKey: ['my-scans-today'] });
+      // the bus list was stale (a bus deactivated or added since it loaded): reload it and ask again
+      if (!res.ok && (res.code === 'BUS_INVALID' || res.code === 'BUS_REQUIRED')) {
+        chooseBus(null);
+        void qc.invalidateQueries({ queryKey: ['scan-buses'] });
+      }
     },
     onError: (err) => {
       setResult({ ok: false, code: 'NETWORK', message_ar: errorMessage(err) });
@@ -91,9 +168,14 @@ export default function ScanPage() {
   const submit = useCallback(
     (payload: Pending['payload']) => {
       if (disabled || scan.isPending) return;
-      scan.mutate({ payload, preview: true });
+      if (bus && !busIsCurrent()) {
+        chooseBus(null);
+        return;
+      }
+      // the confirm call reuses this payload, so preview and confirm name the same bus
+      scan.mutate({ payload: { ...payload, bus_id: bus?.id ?? null }, preview: true });
     },
-    [disabled, scan],
+    [disabled, scan, bus, busIsCurrent, chooseBus],
   );
 
   const onDecode = useCallback(
@@ -133,6 +215,30 @@ export default function ScanPage() {
 
       <GeoStatus geo={geo} requireGeo={requireGeo} onRetry={retryGeo} />
 
+      {isAdmin && universities.length > 1 ? (
+        <Card className="space-y-2" data-testid="scan-university">
+          <p className="font-bold">{t.scan.scanUniversity}</p>
+          <UniversityPicker className="w-full max-w-none" />
+          <p className="text-sm text-muted">{t.scan.scanUniversityHint}</p>
+        </Card>
+      ) : null}
+
+      {busQuery.isError ? (
+        <Card className="space-y-2 border-2 border-danger" role="alert" data-testid="scan-bus-error">
+          <p className="font-bold text-danger">{t.scan.busesError}</p>
+          <Button size="sm" onClick={() => void busQuery.refetch()}>
+            <RefreshCw className="h-4 w-4" aria-hidden />
+            {t.common.retry}
+          </Button>
+        </Card>
+      ) : busQuery.isLoading ? (
+        <p role="status" className="text-sm text-muted">
+          {t.scan.busesLoading}
+        </p>
+      ) : buses.length ? (
+        <BusPicker buses={buses} bus={bus} onChoose={chooseBus} />
+      ) : null}
+
       <Button
         variant="primary"
         size="lg"
@@ -142,6 +248,7 @@ export default function ScanPage() {
           unlockAudio();
           setCameraOn(true);
         }}
+        data-testid="scan-start"
       >
         <Camera className="h-8 w-8" aria-hidden />
         {t.scan.start}
@@ -206,6 +313,47 @@ export default function ScanPage() {
         />
       ) : null}
     </div>
+  );
+}
+
+function BusPicker({ buses, bus, onChoose }: { buses: BusOption[]; bus: BusOption | null; onChoose: (id: string | null) => void }) {
+  const selectId = useId();
+  if (bus) {
+    return (
+      <Card className="flex items-center justify-between gap-3 border-2 border-brand-ink" data-testid="scan-bus">
+        <span className="flex min-w-0 items-center gap-3">
+          <Bus className="h-8 w-8 shrink-0 text-brand-ink" aria-hidden />
+          <span className="min-w-0">
+            <span className="block text-xs text-muted">{t.scan.bus}</span>
+            <span className="num block truncate text-2xl font-extrabold">{bus.bus_number}</span>
+            <span className="num block truncate font-mono text-sm text-muted">{bus.plate_number}</span>
+          </span>
+        </span>
+        <Button onClick={() => onChoose(null)} data-testid="scan-bus-change">
+          {t.scan.changeBus}
+        </Button>
+      </Card>
+    );
+  }
+  return (
+    <Card className="space-y-2 border-2 border-warning" data-testid="scan-bus-picker">
+      <label htmlFor={selectId} className="flex items-center gap-2 font-bold">
+        <Bus className="h-5 w-5" aria-hidden />
+        {t.scan.pickBus}
+      </label>
+      <Select id={selectId} value="" onChange={(e) => e.target.value && onChoose(e.target.value)} data-testid="scan-bus-select">
+        <option value="">{t.scan.pickBus}</option>
+        {buses.map((b) => (
+          <option key={b.id} value={b.id}>
+            {b.bus_number} · {b.plate_number}
+          </option>
+        ))}
+      </Select>
+      <p className="text-sm text-muted">{t.scan.pickBusHint}</p>
+      <p role="status" className="text-sm font-bold text-warning">
+        {t.scan.busRequired}
+      </p>
+    </Card>
   );
 }
 
@@ -344,6 +492,30 @@ function CameraView({ paused, onDecode, onClose }: { paused: boolean; onDecode: 
   );
 }
 
+/** What the rider booked for today in this direction; a missing booking is a warning, not a rejection. */
+function BookingLine({ booking, direction }: { booking: ScanBooking; direction: ScanDirection }) {
+  if (!booking.booked) {
+    return (
+      <p role="alert" className="flex items-center justify-center gap-2 rounded-xl bg-warning/15 p-3 text-lg font-extrabold text-warning" data-testid="scan-booking">
+        <AlertTriangle className="h-5 w-5 shrink-0" aria-hidden />
+        {t.scan.notBooked}
+      </p>
+    );
+  }
+  return (
+    <p className="flex items-center justify-center gap-2 rounded-xl bg-surface p-3 font-bold" data-testid="scan-booking">
+      <CalendarCheck className="h-5 w-5 shrink-0 text-brand-ink" aria-hidden />
+      <span className="num">
+        {t.scan.bookingLine(
+          direction === 'outbound' ? t.student.outbound : t.student.return,
+          formatClock(booking.time) || t.pickup.unknown,
+          booking.stop_name ?? t.pickup.unknown,
+        )}
+      </span>
+    </p>
+  );
+}
+
 function ResultPopup({
   result,
   busy,
@@ -425,6 +597,19 @@ function ResultPopup({
                 <DirectionBadge direction={result.direction} className="px-4 py-1.5 text-lg" />
               </span>
             </div>
+            {result.booking ? <BookingLine booking={result.booking} direction={result.direction} /> : null}
+            {result.bus ? (
+              <p className="flex items-center justify-center gap-2 text-sm" data-testid="scan-result-bus">
+                <Bus className="h-4 w-4 shrink-0" aria-hidden />
+                <span>
+                  {t.scan.bus} <span className="num font-bold">{result.bus.bus_number}</span>
+                  {' · '}
+                  <span className={cn('num', result.bus.boarded > result.bus.seats && 'font-bold text-danger')}>
+                    {t.scan.busOnboard(result.bus.boarded, result.bus.seats)}
+                  </span>
+                </span>
+              </p>
+            ) : null}
             {result.offday_override ? (
               <p role="alert" className="flex items-center justify-center gap-2 rounded-xl bg-warning/15 p-3 font-bold text-warning" data-testid="scan-offday">
                 <AlertTriangle className="h-5 w-5 shrink-0" aria-hidden />

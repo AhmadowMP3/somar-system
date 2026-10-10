@@ -27,6 +27,7 @@ type ScanLogRow = {
   remaining_after: number;
   cancelled_at: string | null;
   cancel_reason: string | null;
+  bus_number: string | null;
   student: { full_name: string; transport_number: string; college_id: string; colleges: { name: string } | null } | null;
   supervisor: { full_name: string; login_code: string } | null;
 };
@@ -43,11 +44,12 @@ function ScansBody({ universityId }: { universityId: string }) {
   const [supervisor, setSupervisor] = useState('');
   const [college, setCollege] = useState('');
   const [direction, setDirection] = useState('');
+  const [bus, setBus] = useState('');
   const [overrideOnly, setOverrideOnly] = useState(false);
   const [view, setView] = useState<'list' | 'map'>('list');
   const [cancelling, setCancelling] = useState<ScanLogRow | null>(null);
   const colleges = useColleges(universityId);
-  const ids = { from: useId(), to: useId(), sup: useId(), col: useId(), dir: useId() };
+  const ids = { from: useId(), to: useId(), sup: useId(), col: useId(), dir: useId(), bus: useId() };
 
   const supervisors = useQuery({
     queryKey: ['scan-supervisors', universityId],
@@ -62,13 +64,21 @@ function ScansBody({ universityId }: { universityId: string }) {
       ) as { id: string; full_name: string; login_code: string }[],
   });
 
+  const buses = useQuery({
+    queryKey: ['buses', universityId],
+    queryFn: async () =>
+      unwrap(
+        await supabase.from('buses').select('id, bus_number').eq('university_id', universityId).order('bus_number'),
+      ) as { id: string; bus_number: string }[],
+  });
+
   const query = useQuery({
-    queryKey: ['scan-log', universityId, from, to, supervisor, college, direction, overrideOnly],
+    queryKey: ['scan-log', universityId, from, to, supervisor, college, direction, bus, overrideOnly],
     queryFn: async () => {
       let q = supabase
         .from('scans')
         .select(
-          'id, scanned_at, service_date, direction, method, lat, lng, accuracy_m, geo_denied, offday_override, override_reason, remaining_after, cancelled_at, cancel_reason, student:students!inner(full_name, transport_number, college_id, colleges(name)), supervisor:profiles!scans_supervisor_id_fkey(full_name, login_code)',
+          'id, scanned_at, service_date, direction, method, lat, lng, accuracy_m, geo_denied, offday_override, override_reason, remaining_after, cancelled_at, cancel_reason, bus_number, student:students!inner(full_name, transport_number, college_id, colleges(name)), supervisor:profiles!scans_supervisor_id_fkey(full_name, login_code)',
         )
         .eq('university_id', universityId)
         .gte('service_date', from)
@@ -78,6 +88,9 @@ function ScansBody({ universityId }: { universityId: string }) {
       if (supervisor) q = q.eq('supervisor_id', supervisor);
       if (college) q = q.eq('student.college_id', college);
       if (direction) q = q.eq('direction', direction);
+      // 'none': scans recorded without a bus (the snapshot survives a deleted bus)
+      if (bus === 'none') q = q.is('bus_number', null);
+      else if (bus) q = q.eq('bus_id', bus);
       if (overrideOnly) q = q.eq('offday_override', true);
       return unwrap(await q) as unknown as ScanLogRow[];
     },
@@ -94,6 +107,7 @@ function ScansBody({ universityId }: { universityId: string }) {
         [sc.supervisor]: r.supervisor?.full_name ?? '',
         [sc.direction]: r.direction === 'outbound' ? t.student.outbound : t.student.return,
         [sc.method]: sc.methods[r.method] ?? r.method,
+        [sc.bus]: r.bus_number ?? '',
         [sc.override]: r.offday_override ? r.override_reason ?? t.common.yes : '',
         [sc.remainingAfter]: r.remaining_after,
         [sc.lat]: r.lat ?? '',
@@ -119,7 +133,7 @@ function ScansBody({ universityId }: { universityId: string }) {
           </>
         }
       />
-      <Card className="grid grid-cols-2 gap-3 md:grid-cols-6">
+      <Card className="grid grid-cols-2 gap-3 md:grid-cols-7">
         <Field label={t.common.from} htmlFor={ids.from}>
           <Input id={ids.from} type="date" value={from} onChange={(e) => setFrom(e.target.value)} />
         </Field>
@@ -151,6 +165,17 @@ function ScansBody({ universityId }: { universityId: string }) {
             <option value="">{t.common.all}</option>
             <option value="outbound">{t.student.outbound}</option>
             <option value="return">{t.student.return}</option>
+          </Select>
+        </Field>
+        <Field label={sc.bus} htmlFor={ids.bus}>
+          <Select id={ids.bus} value={bus} onChange={(e) => setBus(e.target.value)} data-testid="scan-log-bus">
+            <option value="">{t.common.all}</option>
+            {(buses.data ?? []).map((b) => (
+              <option key={b.id} value={b.id}>
+                {b.bus_number}
+              </option>
+            ))}
+            <option value="none">{sc.noBus}</option>
           </Select>
         </Field>
         <label className="flex items-end gap-2 pb-3 text-sm font-semibold">
@@ -188,6 +213,11 @@ function ScansBody({ universityId }: { universityId: string }) {
                 { key: 'supervisor', header: sc.supervisor, cell: (r) => r.supervisor?.full_name ?? t.common.none },
                 { key: 'dir', header: sc.direction, cell: (r) => <DirectionBadge direction={r.direction} />, mobileHidden: true },
                 { key: 'method', header: sc.method, cell: (r) => sc.methods[r.method] ?? r.method },
+                {
+                  key: 'bus',
+                  header: sc.bus,
+                  cell: (r) => (r.bus_number ? <span className="num">{r.bus_number}</span> : <span className="text-muted">{sc.noBus}</span>),
+                },
                 {
                   key: 'flags',
                   header: t.common.status,

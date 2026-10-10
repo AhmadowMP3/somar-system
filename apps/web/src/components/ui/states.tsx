@@ -1,5 +1,5 @@
 import { AlertTriangle, Inbox } from 'lucide-react';
-import type { ReactNode } from 'react';
+import type { MouseEvent, ReactNode } from 'react';
 import { t } from '@/i18n/ar';
 import { errorMessage } from '@/lib/errors';
 import { cn } from '@/lib/utils';
@@ -97,6 +97,11 @@ export type Column<T> = {
   mobileHidden?: boolean;
 };
 
+/** A control before each row (e.g. a selection checkbox); clicks inside it never open the row. */
+export type LeadingCell<T> = { header: ReactNode; cell: (row: T) => ReactNode };
+
+const stopRowClick = (e: MouseEvent) => e.stopPropagation();
+
 /** Table on ≥768px, stacked cards below. */
 export function DataList<T>({
   rows,
@@ -104,12 +109,16 @@ export function DataList<T>({
   rowKey,
   onRowClick,
   cardTitle,
+  leading,
+  rowClassName,
 }: {
   rows: T[];
   columns: Column<T>[];
   rowKey: (row: T) => string;
   onRowClick?: (row: T) => void;
   cardTitle?: (row: T) => ReactNode;
+  leading?: LeadingCell<T>;
+  rowClassName?: (row: T) => string | undefined;
 }) {
   return (
     <>
@@ -117,6 +126,11 @@ export function DataList<T>({
         <table className="w-full text-sm">
           <thead className="bg-surface text-start text-xs text-muted">
             <tr>
+              {leading ? (
+                <th scope="col" className="w-10 px-3 py-2 text-start">
+                  {leading.header}
+                </th>
+              ) : null}
               {columns.map((c) => (
                 <th key={c.key} scope="col" className={cn('px-3 py-2 text-start font-semibold', c.className)}>
                   {c.header}
@@ -128,9 +142,14 @@ export function DataList<T>({
             {rows.map((row) => (
               <tr
                 key={rowKey(row)}
-                className={cn('border-t border-border', onRowClick && 'cursor-pointer hover:bg-surface')}
+                className={cn('border-t border-border', onRowClick && 'cursor-pointer hover:bg-surface', rowClassName?.(row))}
                 onClick={onRowClick ? () => onRowClick(row) : undefined}
               >
+                {leading ? (
+                  <td className="w-10 px-3 py-2 align-middle" onClick={stopRowClick}>
+                    {leading.cell(row)}
+                  </td>
+                ) : null}
                 {columns.map((c) => (
                   <td key={c.key} className={cn('px-3 py-2 align-middle', c.className)}>
                     {c.cell(row)}
@@ -145,10 +164,19 @@ export function DataList<T>({
         {rows.map((row) => (
           <li key={rowKey(row)}>
             <Card
-              className={cn('p-3', onRowClick && 'cursor-pointer active:bg-surface')}
+              className={cn('p-3', onRowClick && 'cursor-pointer active:bg-surface', rowClassName?.(row))}
               onClick={onRowClick ? () => onRowClick(row) : undefined}
             >
-              {cardTitle ? <div className="mb-2 font-bold">{cardTitle(row)}</div> : null}
+              {leading || cardTitle ? (
+                <div className="mb-2 flex items-center gap-3">
+                  {leading ? (
+                    <div className="shrink-0" onClick={stopRowClick}>
+                      {leading.cell(row)}
+                    </div>
+                  ) : null}
+                  {cardTitle ? <div className="min-w-0 flex-1 font-bold">{cardTitle(row)}</div> : null}
+                </div>
+              ) : null}
               <dl className="grid grid-cols-[auto,1fr] gap-x-3 gap-y-1 text-sm">
                 {columns
                   .filter((c) => !c.mobileHidden)

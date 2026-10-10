@@ -176,7 +176,25 @@ export type ScanResponse = {
   preview?: boolean;
   minutes_remaining?: number;
   offday_override?: boolean;
+  bus?: { id: string; bus_number: string; plate_number: string; seats: number; boarded: number } | null;
 };
+
+/** A bus of the fixture's university (inserted as the service role). */
+export async function createBus(fx: Fixture, opts: { busNumber?: string; seats?: number; active?: boolean } = {}) {
+  const { data, error } = await service
+    .from('buses')
+    .insert({
+      university_id: fx.universityId,
+      bus_number: opts.busNumber ?? `B-${uniquePrefix()}`,
+      plate_number: '123456',
+      seats: opts.seats ?? 30,
+      is_active: opts.active ?? true,
+    })
+    .select('id, bus_number')
+    .single();
+  if (error || !data) throw new Error(`createBus: ${error?.message}`);
+  return data as { id: string; bus_number: string };
+}
 
 export async function scan(client: SupabaseClient, args: Record<string, unknown>): Promise<ScanResponse> {
   const { data, error } = await client.rpc('perform_scan', args);

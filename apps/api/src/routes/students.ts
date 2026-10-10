@@ -27,6 +27,11 @@ type StudentRow = {
   photo_path: string | null;
 };
 
+const bulkDeleteSchema = z.object({
+  university_id: z.string().uuid(),
+  student_ids: z.array(z.string().uuid()).min(1).max(500),
+});
+
 export async function studentRoutes(app: FastifyInstance, ctx: AppContext) {
   const { db, cfg, requireRole } = ctx;
   const staff = requireRole('admin', 'university_supervisor');
@@ -128,6 +133,57 @@ export async function studentRoutes(app: FastifyInstance, ctx: AppContext) {
     if (!res.ok) throw res.code === 'STUDENT_EXISTS' ? conflict('STUDENT_EXISTS') : new ApiError(500, 'PROVISION_FAILED');
     reply.code(201);
     return { ok: true, student_id: res.studentId, transport_number: res.transportNumber };
+  });
+
+  // Bulk delete from the students list (admin only, like the students_delete row policy). Deleting the
+  // login account cascades to the profile and the student row; a student without an account is deleted directly.
+  app.post('/api/students/bulk-delete', { preHandler: adminOnly }, async (request) => {
+    const auth = authOf(request);
+    const input = bulkDeleteSchema.parse(request.body);
+    assertUniversityScope(auth, input.university_id);
+    const picked = [...new Set(input.student_ids)];
+    const found: (StudentRow & { full_name: string; kind: string })[] = [];
+    for (let i = 0; i < picked.length; i += 200) {
+      const { data, error } = await db
+        .from('students')
+        .select('id, profile_id, university_id, transport_number, national_id, qr_token, photo_path, full_name, kind')
+        .eq('university_id', input.university_id)
+        .in('id', picked.slice(i, i + 200));
+      if (error) throw new ApiError(500, 'INTERNAL');
+      found.push(...((data ?? []) as typeof found));
+    }
+    const foundIds = new Set(found.map((s) => s.id));
+    const failed: { student_id: string; code: string }[] = picked
+      .filter((id) => !foundIds.has(id))
+      .map((id) => ({ student_id: id, code: 'NOT_FOUND' }));
+
+    const deleted: typeof found = [];
+    const queue = [...found];
+    const worker = async () => {
+      for (let s = queue.shift(); s; s = queue.shift()) {
+        const { error } = s.profile_id
+          ? await db.auth.admin.deleteUser(s.profile_id)
+          : await db.from('students').delete().eq('id', s.id);
+        if (error) failed.push({ student_id: s.id, code: 'INTERNAL' });
+        else deleted.push(s);
+      }
+    };
+    await Promise.all(Array.from({ length: 4 }, worker));
+
+    const photos = deleted.map((s) => s.photo_path).filter((p): p is string => Boolean(p));
+    if (photos.length) await db.storage.from(cfg.SUPABASE_PHOTO_BUCKET).remove(photos);
+    for (const s of deleted) {
+      await writeAudit(db, {
+        actor: auth.profile.id,
+        universityId: s.university_id,
+        action: 'student.delete',
+        entity: 'students',
+        entityId: s.id,
+        before: { transport_number: s.transport_number, full_name: s.full_name, kind: s.kind },
+        ip: clientIp(request),
+      });
+    }
+    return { ok: true, deleted: deleted.length, failed };
   });
 
   app.post<{ Params: { id: string } }>(

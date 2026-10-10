@@ -6,6 +6,7 @@ import { cardVariant, CardFace, toDataUri, type CardVariant } from '@/components
 import { Button, Select } from '@/components/ui/primitives';
 import { EmptyState, ErrorState, ListSkeleton } from '@/components/ui/states';
 import { t } from '@/i18n/ar';
+import { readSelection } from '@/lib/selection';
 import { PHOTO_BUCKET, signedUrl, supabase, unwrap } from '@/lib/supabase';
 
 type CardData = {
@@ -18,18 +19,46 @@ type CardData = {
   photo: string | null;
 };
 
-async function loadCards(params: URLSearchParams): Promise<CardData[]> {
-  let q = supabase
-    .from('students')
-    .select('id, full_name, kind, job_title, transport_number, qr_token, photo_path, colleges(name)')
-    .eq('is_active', true)
-    .order('transport_number');
+type CardRow = {
+  id: string;
+  full_name: string;
+  kind: string;
+  job_title: string | null;
+  transport_number: string;
+  qr_token: string;
+  photo_path: string | null;
+  colleges: { name: string } | null;
+};
+
+const CARD_COLUMNS = 'id, full_name, kind, job_title, transport_number, qr_token, photo_path, colleges(name)';
+
+/** Picked ids: a stored selection (`sel`, from the students list) or a short `ids` list. */
+function pickedIds(params: URLSearchParams): string[] | null {
+  const sel = params.get('sel');
+  if (sel) return readSelection(sel) ?? [];
   const ids = params.get('ids');
+  return ids ? ids.split(',').filter(Boolean) : null;
+}
+
+async function loadCards(params: URLSearchParams): Promise<CardData[]> {
+  const ids = pickedIds(params);
+  // a long id list goes in chunks so the request URL stays short
+  if (ids) {
+    const rows: CardRow[] = [];
+    for (let i = 0; i < ids.length; i += 150) {
+      rows.push(
+        ...(unwrap(
+          await supabase.from('students').select(CARD_COLUMNS).eq('is_active', true).in('id', ids.slice(i, i + 150)),
+        ) as unknown as CardRow[]),
+      );
+    }
+    return toCards(rows.sort((a, b) => a.transport_number.localeCompare(b.transport_number)));
+  }
+  let q = supabase.from('students').select(CARD_COLUMNS).eq('is_active', true).order('transport_number');
   const pkg = params.get('package');
   const college = params.get('college');
   const university = params.get('university');
-  if (ids) q = q.in('id', ids.split(',').filter(Boolean));
-  else if (pkg) {
+  if (pkg) {
     const subs = unwrap(await supabase.from('subscriptions').select('student_id').eq('package_id', pkg).eq('status', 'active')) as {
       student_id: string;
     }[];
@@ -38,18 +67,11 @@ async function loadCards(params: URLSearchParams): Promise<CardData[]> {
   else if (university) q = q.eq('university_id', university);
   else return [];
   const kind = params.get('kind');
-  if (kind && !ids) q = q.eq('kind', kind);
+  if (kind) q = q.eq('kind', kind);
+  return toCards(unwrap(await q) as unknown as CardRow[]);
+}
 
-  const students = unwrap(await q) as unknown as {
-    id: string;
-    full_name: string;
-    kind: string;
-    job_title: string | null;
-    transport_number: string;
-    qr_token: string;
-    photo_path: string | null;
-    colleges: { name: string } | null;
-  }[];
+async function toCards(students: CardRow[]): Promise<CardData[]> {
   if (!students.length) return [];
 
   return Promise.all(
@@ -85,8 +107,11 @@ export default function CardsPrintPage() {
   const [params] = useSearchParams();
   const navigate = useNavigate();
   const [mode, setMode] = useState<'sheet' | 'single'>(params.get('mode') === 'single' ? 'single' : 'sheet');
+  // a stored selection is per tab: opened elsewhere or cleared, say so instead of «no cards»
+  const selectionLost = params.has('sel') && readSelection(params.get('sel')) === null;
   const query = useQuery({
     queryKey: ['cards', params.toString()],
+    enabled: !selectionLost,
     queryFn: () => loadCards(params),
     staleTime: 0,
   });
@@ -128,7 +153,11 @@ export default function CardsPrintPage() {
         </Button>
         <p className="w-full text-xs text-muted">{t.cards.printHint}</p>
       </div>
-      {query.isLoading ? (
+      {selectionLost ? (
+        <div className="p-6">
+          <EmptyState title={t.roster.selectionLost} />
+        </div>
+      ) : query.isLoading ? (
         <div className="p-6">
           <p className="mb-3 text-sm text-muted" role="status">
             {t.cards.preparing}
