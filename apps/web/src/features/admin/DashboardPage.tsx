@@ -22,7 +22,7 @@ type DashboardData = {
   subscriptions_expiring: number;
   students_no_photo: number;
   needs_area_mapping: number;
-  by_kind: Record<RiderKind, KindCounts>;
+  by_kind?: Partial<Record<RiderKind, KindCounts>>;
   chart: { day: string; outbound: number; return: number }[];
 };
 
@@ -150,9 +150,23 @@ export default function DashboardPage() {
       <QueryState query={query} skeleton={<CardsSkeleton count={8} />}>
         {(data) => (
           <div className="space-y-4">
-            {KINDS.map((k) => (
-              <KindSection key={k} kind={k} counts={data.by_kind[k]} />
-            ))}
+            {/* a database without migration 0032 has no by_kind: show the old combined numbers instead of crashing */}
+            {data.by_kind ? (
+              KINDS.map((k) => {
+                const counts = data.by_kind?.[k];
+                return counts ? <KindSection key={k} kind={k} counts={counts} /> : null;
+              })
+            ) : (
+              <KindSection
+                kind="student"
+                counts={{
+                  total: data.students_total,
+                  active: data.students_active,
+                  scans_today_outbound: data.scans_today_outbound,
+                  scans_today_return: data.scans_today_return,
+                }}
+              />
+            )}
             <section aria-labelledby="dash-alerts">
               <h2 id="dash-alerts" className="mb-2 text-base font-bold">
                 {d.alerts}
