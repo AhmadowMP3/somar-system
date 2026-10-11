@@ -1,8 +1,8 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { ExternalLink, LocateFixed, Pencil, Plus, Trash2 } from 'lucide-react';
+import { ArrowDown, ArrowUp, ExternalLink, LocateFixed, Pencil, Plus, Search, Trash2 } from 'lucide-react';
 import { useEffect, useId, useState, type FormEvent } from 'react';
 import { Link } from 'react-router-dom';
-import { findPlusCode, parseMapsUrl } from '@somar/shared';
+import { findPlusCode, foldArabic, parseMapsUrl } from '@somar/shared';
 import { useStopLibrary, type LibraryStop } from '@/features/student/StudentPages';
 import { ConfirmDialog, Dialog, useToast } from '@/components/ui/overlay';
 import { Badge, Button, Field, Input, Select, Switch } from '@/components/ui/primitives';
@@ -48,6 +48,32 @@ function StopsBody({ universityId }: { universityId: string }) {
     onError: (e) => toast.error(errorMessage(e)),
   });
   const areaName = (id: string | null) => areas.data?.find((a) => a.id === id)?.name ?? t.common.none;
+  const [term, setTerm] = useState('');
+  const searchId = useId();
+  // the new order shows at once; a failure puts the old one back
+  const reorder = useMutation({
+    mutationFn: async (ids: string[]) => unwrap(await supabase.rpc('reorder_stops', { p_university_id: universityId, p_ids: ids })),
+    onMutate: async (ids) => {
+      await qc.cancelQueries({ queryKey: ['stops', universityId] });
+      const prev = qc.getQueryData<LibraryStop[]>(['stops', universityId]);
+      if (prev) {
+        const byId = new Map(prev.map((x) => [x.id, x]));
+        qc.setQueryData(['stops', universityId], ids.map((id) => byId.get(id)).filter(Boolean));
+      }
+      return { prev };
+    },
+    onError: (e, _ids, ctx) => {
+      if (ctx?.prev) qc.setQueryData(['stops', universityId], ctx.prev);
+      toast.error(errorMessage(e));
+    },
+    onSettled: () => void qc.invalidateQueries({ queryKey: ['stops', universityId] }),
+  });
+  /** Moves a stop to a 1-based position in the whole list. */
+  const moveTo = (all: LibraryStop[], id: string, position: number) => {
+    const ids = all.map((x) => x.id).filter((x) => x !== id);
+    ids.splice(Math.min(Math.max(position - 1, 0), ids.length), 0, id);
+    if (ids.some((x, i) => x !== all[i]?.id)) reorder.mutate(ids);
+  };
   const missing = (query.data ?? []).filter((x) => x.maps_url && (x.lat == null || x.lng == null)).length;
   const [report, setReport] = useState<{ failed: string[]; shared: string[][] } | null>(null);
   const resolveAll = useMutation({
@@ -85,12 +111,52 @@ function StopsBody({ universityId }: { universityId: string }) {
         }
       />
       <QueryState query={query} empty={(rows) => (rows.length ? null : <EmptyState title={s.empty} hint={s.emptyHint} />)}>
-        {(rows) => (
+        {(all) => {
+          const needle = foldArabic(term.trim());
+          const rows = needle ? all.filter((x) => foldArabic(`${x.name} ${areaName(x.area_id)}`).includes(needle)) : all;
+          const position = new Map(all.map((x, i) => [x.id, i + 1]));
+          return (
+          <div className="space-y-3">
+          <div className="space-y-1">
+            <div className="relative">
+              <label htmlFor={searchId} className="sr-only">
+                {t.common.search}
+              </label>
+              <Search className="pointer-events-none absolute start-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted" aria-hidden />
+              <Input
+                id={searchId}
+                className="ps-9"
+                placeholder={s.searchPlaceholder}
+                value={term}
+                onChange={(e) => setTerm(e.target.value)}
+                data-testid="stops-search"
+              />
+            </div>
+            <p className="text-xs text-muted">{s.orderHint}</p>
+          </div>
+          {!rows.length ? <EmptyState title={s.noMatches} /> : null}
           <DataList
             rows={rows}
             rowKey={(r) => r.id}
-            cardTitle={(r) => r.name}
+            cardTitle={(r) => (
+              <span className="flex items-center gap-2">
+                <span className="num text-sm text-muted">{position.get(r.id)}.</span>
+                {r.name}
+              </span>
+            )}
             columns={[
+              {
+                key: 'order',
+                header: s.order,
+                cell: (r) => (
+                  <OrderCell
+                    position={position.get(r.id) ?? 0}
+                    total={all.length}
+                    busy={reorder.isPending}
+                    onMove={(to) => moveTo(all, r.id, to)}
+                  />
+                ),
+              },
               { key: 'name', header: t.admin.routes.stopName, cell: (r) => r.name, mobileHidden: true },
               { key: 'area', header: t.admin.routes.area, cell: (r) => areaName(r.area_id) },
               {
@@ -132,7 +198,9 @@ function StopsBody({ universityId }: { universityId: string }) {
               },
             ]}
           />
-        )}
+          </div>
+          );
+        }}
       </QueryState>
       <Dialog open={report !== null} onOpenChange={(o) => (o ? undefined : setReport(null))} title={s.failedTitle}>
         <div className="space-y-4">
@@ -282,5 +350,43 @@ function StopFormDialog({ universityId, stop, onClose }: { universityId: string;
         </div>
       </form>
     </Dialog>
+  );
+}
+
+/** Up / down, or type the stop's new place in the list (applied on Enter or leaving the box). */
+function OrderCell({ position, total, busy, onMove }: { position: number; total: number; busy: boolean; onMove: (to: number) => void }) {
+  const s = t.admin.stops;
+  const [draft, setDraft] = useState(String(position));
+  useEffect(() => setDraft(String(position)), [position]);
+  const commit = () => {
+    const to = Number(draft);
+    if (Number.isInteger(to) && to >= 1 && to !== position) onMove(Math.min(to, total));
+    else setDraft(String(position));
+  };
+  return (
+    <span className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
+      <Button size="icon" variant="ghost" aria-label={t.admin.routes.moveUp} disabled={busy || position <= 1} onClick={() => onMove(position - 1)} data-testid="stop-up">
+        <ArrowUp className="h-4 w-4" />
+      </Button>
+      <Input
+        type="number"
+        inputMode="numeric"
+        min={1}
+        max={total}
+        className="num h-10 w-16 px-2 text-center"
+        aria-label={s.position}
+        value={draft}
+        disabled={busy}
+        onChange={(e) => setDraft(e.target.value)}
+        onBlur={commit}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter') e.currentTarget.blur();
+        }}
+        data-testid="stop-position"
+      />
+      <Button size="icon" variant="ghost" aria-label={t.admin.routes.moveDown} disabled={busy || position >= total} onClick={() => onMove(position + 1)} data-testid="stop-down">
+        <ArrowDown className="h-4 w-4" />
+      </Button>
+    </span>
   );
 }

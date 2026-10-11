@@ -183,3 +183,33 @@ describe('every stop is an area', () => {
     expect((b as unknown as { areas: { name: string } }).areas.name).toBe('الرجاء');
   });
 });
+
+describe('stop order', () => {
+  it('new stops go to the end, staff reorder in one call, students read that order, outsiders cannot reorder', async () => {
+    const names = ['ترتيب أ', 'ترتيب ب', 'ترتيب ج'];
+    const ids: string[] = [];
+    for (const name of names) {
+      const res = await gs.from('stops').insert({ university_id: fx.universityId, name }).select('id, sort_order').single();
+      expect(res.error).toBeNull();
+      ids.push(res.data?.id as string);
+    }
+    const ordered = async (client: SupabaseClient) =>
+      ((await client.from('stops').select('id').eq('university_id', fx.universityId).in('id', ids).order('sort_order')).data ?? []).map((r) => r.id);
+    expect(await ordered(gs)).toEqual(ids);
+
+    const wanted = [ids[2], ids[0], ids[1]] as string[];
+    const others = ((await gs.from('stops').select('id').eq('university_id', fx.universityId).order('sort_order')).data ?? [])
+      .map((r) => r.id)
+      .filter((id) => !ids.includes(id));
+    const res = await gs.rpc('reorder_stops', { p_university_id: fx.universityId, p_ids: [...wanted, ...others] });
+    expect(res.error).toBeNull();
+    expect(await ordered(gs)).toEqual(wanted);
+    expect(await ordered(student)).toEqual(wanted);
+
+    const byStudent = await student.rpc('reorder_stops', { p_university_id: fx.universityId, p_ids: ids });
+    expect(byStudent.error?.message).toContain('FORBIDDEN');
+    const foreign = await gs.rpc('reorder_stops', { p_university_id: other.universityId, p_ids: [] });
+    expect(foreign.error?.message).toContain('FORBIDDEN');
+    expect(await ordered(gs)).toEqual(wanted);
+  });
+});

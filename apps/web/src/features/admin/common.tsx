@@ -97,6 +97,7 @@ export function useStopOptions(universityId: string | null | undefined) {
           .select('id, name, areas(name)')
           .eq('university_id', universityId as string)
           .eq('is_active', true)
+          .order('sort_order', { nullsFirst: false })
           .order('name'),
       ) as unknown as StopOption[],
   });

@@ -414,6 +414,8 @@ export function useStopLibrary(universityId: string | null | undefined) {
           .from('stops')
           .select('id, name, maps_url, lat, lng, area_id, is_active')
           .eq('university_id', universityId as string)
+          // the order staff arrange on «نقاط الوقوف» (migration 0034)
+          .order('sort_order', { nullsFirst: false })
           .order('name'),
       ) as LibraryStop[],
   });
