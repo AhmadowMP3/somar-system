@@ -367,7 +367,7 @@ export type StopRow = {
 };
 type LibraryStopRef = { name: string; maps_url: string | null; lat: number | null; lng: number | null; area_id: string | null };
 type RawRouteStop = Omit<StopRow, 'name' | 'maps_url' | 'lat' | 'lng' | 'area_id'> &
-  Partial<LibraryStopRef> & { stop: LibraryStopRef | null };
+  Partial<LibraryStopRef> & { stop: (LibraryStopRef & { is_active: boolean }) | null };
 
 export function useRoutes(universityId: string | null | undefined, onlyActive: boolean) {
   return useQuery({
@@ -377,7 +377,7 @@ export function useRoutes(universityId: string | null | undefined, onlyActive: b
       let q = supabase
         .from('routes')
         .select(
-          'id, name, direction, departure_time, active_days, notes, is_active, route_stops(id, seq, stop_id, departure_time, name, maps_url, lat, lng, area_id, stop:stops(name, maps_url, lat, lng, area_id))',
+          'id, name, direction, departure_time, active_days, notes, is_active, route_stops(id, seq, stop_id, departure_time, name, maps_url, lat, lng, area_id, stop:stops(name, maps_url, lat, lng, area_id, is_active))',
         )
         .eq('university_id', universityId as string)
         .order('departure_time', { nullsFirst: false })
@@ -386,7 +386,8 @@ export function useRoutes(universityId: string | null | undefined, onlyActive: b
       const rows = unwrap(await q) as unknown as (Omit<RouteRow, 'route_stops'> & { route_stops: RawRouteStop[] })[];
       return rows.map((r) => ({
         ...r,
-        route_stops: r.route_stops.map((s) => ({
+        // riders never see a library stop that staff switched off; the staff views list every stop
+        route_stops: r.route_stops.filter((s) => !onlyActive || s.stop?.is_active !== false).map((s) => ({
           id: s.id,
           seq: s.seq,
           stop_id: s.stop_id,
