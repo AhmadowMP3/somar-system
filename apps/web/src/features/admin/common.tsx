@@ -9,6 +9,7 @@ import { exportSheet } from '@/lib/exportSheet';
 import { supabase, unwrap } from '@/lib/supabase';
 
 export type Named = { id: string; name: string; is_active: boolean };
+export type College = Named & { allows_patients: boolean };
 export type PackageRow = {
   id: string;
   university_id: string;
@@ -52,8 +53,8 @@ export function useColleges(universityId: string | null | undefined) {
     enabled: Boolean(universityId),
     queryFn: async () =>
       unwrap(
-        await supabase.from('colleges').select('id, name, is_active').eq('university_id', universityId as string).order('name'),
-      ) as Named[],
+        await supabase.from('colleges').select('id, name, is_active, allows_patients').eq('university_id', universityId as string).order('name'),
+      ) as College[],
   });
 }
 

@@ -1,6 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
-import { ChevronDown, FileSpreadsheet, MapPin, Search } from 'lucide-react';
-import { type ReactNode, useId, useMemo, useState } from 'react';
+import { Bus, ChevronDown, FileSpreadsheet, MapPin, Search } from 'lucide-react';
+import { useId, useMemo, useState } from 'react';
 import { foldArabic, formatClock, formatDate } from '@somar/shared';
 import { Badge, Button, Card, Field, Input, Select } from '@/components/ui/primitives';
 import { DataList, EmptyState, PageHeader, QueryState } from '@/components/ui/states';
@@ -10,24 +10,43 @@ import { supabase, unwrap } from '@/lib/supabase';
 import { cn } from '@/lib/utils';
 import { WithUniversity } from './common';
 
-/** stop_id is null for a stop deleted since: it is then identified by the name saved with the booking. */
-type StatRow = { area_id: string | null; area_name: string | null; stop_id: string | null; stop_name: string; students: number };
-/** outbound_time is null on bookings made before the outbound time was asked. */
-type OutboundRow = StatRow & { outbound_time: string | null };
-type ReturnRow = StatRow & { return_time: string };
 type DayRow = { service_date: string; students: number };
-type AreaGroup = { key: string; name: string; total: number; stops: StatRow[] };
-/** Which students a stop line lists: boarding there at an outbound time, or dropped there at a return time. */
-type StopFilter = { kind: 'outbound'; time: string | null } | { kind: 'return'; time: string };
-type BookingRow = {
-  student_id: string;
-  outbound_time: string | null;
-  return_time: string | null;
+type PassengerType = 'student' | 'supervisor' | 'doctor' | 'employee' | 'patient';
+type Direction = 'outbound' | 'return';
+
+/** One leg of one booked seat (pickup_passengers): who, when, where, and the line that carries it. */
+type Leg = {
+  seat_id: string;
+  passenger_type: PassengerType;
+  full_name: string;
+  phone: string | null;
+  transport_number: string | null;
+  booked_by_name: string | null;
+  booked_by_transport: string | null;
+  direction: Direction;
+  slot: string | null;
+  stop_id: string | null;
   stop_name: string | null;
-  return_stop_name: string | null;
-  students: { full_name: string; transport_number: string } | null;
-  stops: { name: string } | null;
-  return_stop: { name: string } | null;
+  area_id: string | null;
+  area_name: string | null;
+  route_id: string | null;
+  route_name: string | null;
+  route_departure: string | null;
+  stop_seq: number | null;
+  stop_time: string | null;
+};
+
+/** A seat with both legs, for the full list. */
+type Seat = { id: string; outbound: Leg | null; return: Leg | null; base: Leg };
+type StopGroup = { key: string; name: string; area: string | null; time: string | null; seq: number; legs: Leg[] };
+type LineGroup = { key: string; name: string; departure: string | null; legs: Leg[]; stops: StopGroup[] };
+
+const TYPE_TONE: Record<PassengerType, 'info' | 'success' | 'warning' | 'neutral' | 'danger'> = {
+  student: 'neutral',
+  supervisor: 'info',
+  doctor: 'success',
+  employee: 'success',
+  patient: 'warning',
 };
 
 function dayLabel(date: string): string {
@@ -36,17 +55,76 @@ function dayLabel(date: string): string {
 }
 
 const clockOr = (time: string | null) => formatClock(time) || t.pickup.unknown;
+const typeLabel = (leg: Leg) => t.admin.pickups.types[leg.passenger_type] ?? leg.passenger_type;
 
-function groupByArea(rows: StatRow[]): AreaGroup[] {
-  const groups = new Map<string, AreaGroup>();
-  for (const r of rows) {
-    const key = r.area_id ?? '';
-    const g = groups.get(key) ?? { key, name: r.area_name ?? t.admin.pickups.noArea, total: 0, stops: [] };
-    g.total += r.students;
-    g.stops.push(r);
-    groups.set(key, g);
+const PAGE = 1000;
+
+/** Every booked leg of the day (paged past the API's row cap). */
+async function fetchLegs(universityId: string, date: string): Promise<Leg[]> {
+  const all: Leg[] = [];
+  for (let from = 0; ; from += PAGE) {
+    const page = unwrap(
+      await supabase.rpc('pickup_passengers', { p_university_id: universityId, p_date: date }).range(from, from + PAGE - 1),
+    ) as Leg[];
+    all.push(...page);
+    if (page.length < PAGE) break;
   }
-  return [...groups.values()].sort((a, b) => b.total - a.total);
+  return all;
+}
+
+/** Lines in departure order, each with its stops in riding order; legs no line serves go last. */
+function groupByLine(legs: Leg[]): LineGroup[] {
+  const lines = new Map<string, LineGroup>();
+  for (const leg of legs) {
+    const key = leg.route_id ?? '';
+    const line = lines.get(key) ?? {
+      key,
+      name: leg.route_name ?? t.admin.pickups.noLine,
+      departure: leg.route_departure,
+      legs: [],
+      stops: [],
+    };
+    line.legs.push(leg);
+    lines.set(key, line);
+  }
+  for (const line of lines.values()) {
+    const stops = new Map<string, StopGroup>();
+    for (const leg of line.legs) {
+      const key = leg.stop_id ?? `deleted:${leg.stop_name}`;
+      const stop = stops.get(key) ?? {
+        key,
+        name: leg.stop_name ?? t.pickup.unknown,
+        area: leg.area_name,
+        time: leg.stop_time,
+        seq: leg.stop_seq ?? Number.MAX_SAFE_INTEGER,
+        legs: [],
+      };
+      stop.legs.push(leg);
+      stops.set(key, stop);
+    }
+    line.stops = [...stops.values()].sort((a, b) => a.seq - b.seq || b.legs.length - a.legs.length || a.name.localeCompare(b.name, 'ar'));
+  }
+  return [...lines.values()].sort(
+    (a, b) =>
+      Number(a.key === '') - Number(b.key === '') ||
+      (a.departure ?? '99').localeCompare(b.departure ?? '99') ||
+      a.name.localeCompare(b.name, 'ar'),
+  );
+}
+
+function toSeats(legs: Leg[]): Seat[] {
+  const seats = new Map<string, Seat>();
+  for (const leg of legs) {
+    const seat = seats.get(leg.seat_id) ?? { id: leg.seat_id, outbound: null, return: null, base: leg };
+    seat[leg.direction] = leg;
+    seats.set(leg.seat_id, seat);
+  }
+  return [...seats.values()].sort(
+    (a, b) =>
+      (a.outbound?.slot ?? '99').localeCompare(b.outbound?.slot ?? '99') ||
+      Number(a.base.passenger_type === 'patient') - Number(b.base.passenger_type === 'patient') ||
+      a.base.full_name.localeCompare(b.base.full_name, 'ar'),
+  );
 }
 
 export default function PickupsPage() {
@@ -80,11 +158,10 @@ function PickupsBody({ universityId }: { universityId: string }) {
   const tomorrow = win.data?.service_date;
   const date = picked ?? tomorrow ?? null;
 
-  const stats = useQuery({
-    queryKey: ['pickup-outbound-stats', universityId, date],
+  const legs = useQuery({
+    queryKey: ['pickup-passengers', universityId, date],
     enabled: Boolean(date),
-    queryFn: async () =>
-      unwrap(await supabase.rpc('pickup_outbound_stats', { p_university_id: universityId, p_date: date as string })) as OutboundRow[],
+    queryFn: () => fetchLegs(universityId, date as string),
   });
 
   const options = useMemo(() => {
@@ -114,26 +191,48 @@ function PickupsBody({ universityId }: { universityId: string }) {
         ) : null}
       </Card>
 
-      <QueryState query={stats}>
+      <QueryState query={legs}>
         {(rows) => {
-          const chosen = rows.reduce((n, r) => n + r.students, 0);
           if (!rows.length || !date) return <EmptyState title={s.empty} hint={s.emptyHint} />;
+          const seats = toSeats(rows);
+          const riders = seats.filter((x) => x.base.passenger_type !== 'patient').length;
+          const patients = seats.length - riders;
           return (
             <div className="space-y-4">
               <Card className="space-y-2">
                 <p className="font-semibold" data-testid="pickup-summary">
-                  {dayLabel(date)} · {s.chosen(chosen, active.data ?? 0)}
+                  {dayLabel(date)} · {s.chosen(riders, active.data ?? 0)}
+                  {patients ? ` ${s.patientsCount(patients)}` : ''}
                 </p>
                 <div className="h-2 w-full overflow-hidden rounded-full bg-surface" aria-hidden>
-                  <div className="h-full rounded-full bg-success" style={{ width: `${active.data ? (chosen / active.data) * 100 : 0}%` }} />
+                  <div className="h-full rounded-full bg-success" style={{ width: `${active.data ? Math.min(100, (riders / active.data) * 100) : 0}%` }} />
                 </div>
               </Card>
-              <h2 className="text-lg font-extrabold text-brand-ink">{s.outbound}</h2>
-              <OutboundSection rows={rows} date={date} universityId={universityId} />
-              <h2 className="pt-2 text-lg font-extrabold text-brand-ink">{s.return}</h2>
-              <ReturnSection date={date} universityId={universityId} />
+              <div>
+                <h2 className="text-lg font-extrabold text-brand-ink">{s.byLines}</h2>
+                <p className="text-sm text-muted">{s.linesHint}</p>
+              </div>
+              {(['outbound', 'return'] as const).map((direction) => {
+                const lines = groupByLine(rows.filter((r) => r.direction === direction));
+                return (
+                  <section key={direction} className="space-y-3" data-testid={`pickup-lines-${direction}`}>
+                    <h3 className="text-base font-extrabold">{direction === 'outbound' ? s.outboundLines : s.returnLines}</h3>
+                    {lines.length ? (
+                      <ul className="grid gap-4 lg:grid-cols-2">
+                        {lines.map((line) => (
+                          <li key={line.key}>
+                            <LineCard line={line} />
+                          </li>
+                        ))}
+                      </ul>
+                    ) : (
+                      <p className="text-sm text-muted">{s.noSeats}</p>
+                    )}
+                  </section>
+                );
+              })}
               <h2 className="pt-2 text-lg font-extrabold text-brand-ink">{s.list}</h2>
-              <BookingsList date={date} universityId={universityId} />
+              <BookingsList seats={seats} date={date} />
             </div>
           );
         }}
@@ -142,278 +241,193 @@ function PickupsBody({ universityId }: { universityId: string }) {
   );
 }
 
-function AreaCards({
-  areas,
-  date,
-  universityId,
-  filter,
-  testId,
-}: {
-  areas: AreaGroup[];
-  date: string;
-  universityId: string;
-  filter: StopFilter;
-  testId: string;
-}) {
+function LineCard({ line }: { line: LineGroup }) {
   const s = t.admin.pickups;
+  const offLine = line.key === '';
   return (
-    <ul className="grid gap-4 lg:grid-cols-2" data-testid={testId}>
-      {areas.map((g) => (
-        <li key={g.key}>
-          <Card>
-            <div className="mb-3 flex items-center justify-between gap-2">
-              <p className="flex items-center gap-2 text-lg font-extrabold">
-                <MapPin className="h-5 w-5 text-brand-ink" aria-hidden />
-                {g.name}
-              </p>
-              <Badge tone="info">
-                <span className="num">{g.total}</span> {s.students}
-              </Badge>
-            </div>
-            <ul className="divide-y divide-border">
-              {g.stops.map((stop) => (
-                <StopLine key={stop.stop_id ?? `deleted:${stop.stop_name}`} stop={stop} date={date} universityId={universityId} filter={filter} />
-              ))}
-            </ul>
-          </Card>
-        </li>
-      ))}
-    </ul>
-  );
-}
-
-/** A time heading with its total, then the areas and stops of that time. */
-function TimeBlock({ title, rows, children }: { title: string; rows: StatRow[]; children: ReactNode }) {
-  const total = rows.reduce((n, r) => n + r.students, 0);
-  return (
-    <section className="space-y-2">
-      <p className="flex items-center gap-2 font-extrabold">
-        <span className="num">{title}</span>
+    <Card className={cn(offLine && 'border-warning/60')} data-testid="pickup-line">
+      <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+        <div className="min-w-0">
+          <p className="flex items-center gap-2 text-lg font-extrabold">
+            <Bus className={cn('h-5 w-5 shrink-0', offLine ? 'text-warning' : 'text-brand-ink')} aria-hidden />
+            {line.name}
+          </p>
+          {offLine ? <p className="text-xs text-muted">{s.noLineHint}</p> : null}
+          {line.departure ? <p className="num text-xs text-muted">{s.departs(formatClock(line.departure))}</p> : null}
+        </div>
         <Badge tone="info">
-          <span className="num">{total}</span> {t.admin.pickups.students}
+          <span className="num">{s.seats(line.legs.length)}</span>
         </Badge>
-      </p>
-      {children}
-    </section>
+      </div>
+      <ol className="divide-y divide-border">
+        {line.stops.map((stop, i) => (
+          <StopRow key={stop.key} stop={stop} index={offLine ? null : i + 1} />
+        ))}
+      </ol>
+    </Card>
   );
 }
 
-/** Outbound bookings: one block per outbound time (old bookings without one last), then areas and stops. */
-function OutboundSection({ rows, date, universityId }: { rows: OutboundRow[]; date: string; universityId: string }) {
-  const s = t.admin.pickups;
-  const times = [...new Set(rows.map((r) => r.outbound_time))].sort((a, b) => (a ?? '99').localeCompare(b ?? '99'));
-  return (
-    <div className="space-y-4" data-testid="pickup-areas">
-      {times.map((time) => {
-        const slot = rows.filter((r) => r.outbound_time === time);
-        return (
-          <TimeBlock key={time ?? 'none'} title={time ? s.outboundAt(formatClock(time)) : s.noTime} rows={slot}>
-            <AreaCards
-              areas={groupByArea(slot)}
-              date={date}
-              universityId={universityId}
-              filter={{ kind: 'outbound', time }}
-              testId="pickup-outbound-areas"
-            />
-          </TimeBlock>
-        );
-      })}
-    </div>
-  );
-}
-
-/** Return bookings: one block per return time, then areas and drop-off stops inside it. */
-function ReturnSection({ date, universityId }: { date: string; universityId: string }) {
-  const s = t.admin.pickups;
-  const stats = useQuery({
-    queryKey: ['pickup-return-stats', universityId, date],
-    queryFn: async () => unwrap(await supabase.rpc('pickup_return_stats', { p_university_id: universityId, p_date: date })) as ReturnRow[],
-  });
-  return (
-    <QueryState query={stats}>
-      {(rows) => {
-        if (!rows.length) return <p className="text-sm text-muted">{s.noReturns}</p>;
-        const times = [...new Set(rows.map((r) => r.return_time))].sort();
-        return (
-          <div className="space-y-4" data-testid="pickup-returns">
-            {times.map((time) => {
-              const slot = rows.filter((r) => r.return_time === time);
-              return (
-                <TimeBlock key={time} title={s.returnAt(formatClock(time))} rows={slot}>
-                  <AreaCards
-                    areas={groupByArea(slot)}
-                    date={date}
-                    universityId={universityId}
-                    filter={{ kind: 'return', time }}
-                    testId="pickup-return-areas"
-                  />
-                </TimeBlock>
-              );
-            })}
-          </div>
-        );
-      }}
-    </QueryState>
-  );
-}
-
-/** One stop with its count; the student list loads only when opened. */
-function StopLine({ stop, date, universityId, filter }: { stop: StatRow; date: string; universityId: string; filter: StopFilter }) {
+/** A stop on the line with its count; the passengers show when opened. */
+function StopRow({ stop, index }: { stop: StopGroup; index: number | null }) {
   const s = t.admin.pickups;
   const [open, setOpen] = useState(false);
-  const people = useQuery({
-    queryKey: ['pickup-people', universityId, date, stop.stop_id, stop.stop_name, filter],
-    enabled: open,
-    queryFn: async () => {
-      let q = supabase
-        .from('pickup_choices')
-        .select('student_id, students(full_name, transport_number)')
-        .eq('university_id', universityId)
-        .eq('service_date', date);
-      const [idCol, nameCol, timeCol] =
-        filter.kind === 'outbound' ? ['stop_id', 'stop_name', 'outbound_time'] : ['return_stop_id', 'return_stop_name', 'return_time'];
-      q = stop.stop_id ? q.eq(idCol, stop.stop_id) : q.is(idCol, null).eq(nameCol, stop.stop_name);
-      q = filter.time ? q.eq(timeCol, filter.time) : q.is(timeCol, null);
-      return unwrap(await q) as unknown as { student_id: string; students: { full_name: string; transport_number: string } | null }[];
-    },
-  });
   return (
     <li className="py-2">
       <button
         type="button"
         className="flex min-h-touch w-full items-center justify-between gap-2 text-start"
         aria-expanded={open}
-        aria-label={`${stop.stop_name} — ${open ? s.hideStudents : s.showStudents}`}
+        aria-label={`${stop.name} — ${open ? s.hidePeople : s.showPeople}`}
         onClick={() => setOpen((o) => !o)}
         data-testid="pickup-stop-row"
       >
-        <span className="font-semibold">{stop.stop_name}</span>
-        <span className="flex items-center gap-2">
-          <span className="num text-lg font-extrabold text-brand-ink">{stop.students}</span>
+        <span className="flex min-w-0 items-center gap-2">
+          {index ? (
+            <span className="num flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-brand-ink text-xs font-bold text-on-ink">
+              {index}
+            </span>
+          ) : (
+            <MapPin className="h-4 w-4 shrink-0 text-muted" aria-hidden />
+          )}
+          <span className="min-w-0">
+            <span className="block font-semibold">{stop.name}</span>
+            {stop.time || (stop.area && stop.area !== stop.name) ? (
+              <span className="num block text-xs text-muted">
+                {[stop.time ? formatClock(stop.time) : null, stop.area && stop.area !== stop.name ? stop.area : null].filter(Boolean).join(' · ')}
+              </span>
+            ) : null}
+          </span>
+        </span>
+        <span className="flex shrink-0 items-center gap-2">
+          <span className="num text-lg font-extrabold text-brand-ink">{stop.legs.length}</span>
           <ChevronDown className={cn('h-4 w-4 text-muted transition-transform', open && 'rotate-180')} aria-hidden />
         </span>
       </button>
       {open ? (
-        <QueryState query={people}>
-          {(list) => (
-            <ul className="mt-1 space-y-1 text-sm">
-              {list.map((p) => (
-                <li key={p.student_id} className="flex justify-between gap-2 rounded bg-surface px-2 py-1">
-                  <span>{p.students?.full_name}</span>
-                  <span className="num text-muted" dir="ltr">
-                    {p.students?.transport_number}
+        <ul className="mt-1 space-y-1 text-sm" data-testid="pickup-stop-people">
+          {[...stop.legs]
+            .sort((a, b) => (a.slot ?? '').localeCompare(b.slot ?? '') || a.full_name.localeCompare(b.full_name, 'ar'))
+            .map((leg) => (
+              <li key={`${leg.seat_id}-${leg.direction}`} className="flex flex-wrap items-center justify-between gap-2 rounded bg-surface px-2 py-1.5">
+                <span className="flex min-w-0 flex-wrap items-center gap-2">
+                  <Badge tone={TYPE_TONE[leg.passenger_type]}>{typeLabel(leg)}</Badge>
+                  <span className="font-semibold">{leg.full_name}</span>
+                  {leg.passenger_type === 'patient' && leg.booked_by_name ? (
+                    <span className="text-xs text-muted">{s.withStudent(leg.booked_by_name)}</span>
+                  ) : null}
+                </span>
+                <span className="flex items-center gap-2 text-xs text-muted">
+                  <span className="num">{s.booked(clockOr(leg.slot))}</span>
+                  <span className="num font-mono" dir="ltr">
+                    {leg.transport_number ?? leg.phone}
                   </span>
-                </li>
-              ))}
-            </ul>
-          )}
-        </QueryState>
+                </span>
+              </li>
+            ))}
+        </ul>
       ) : null}
     </li>
   );
 }
 
-const PAGE = 1000;
-
-/** Every booking of the day (paged past the API's row cap), earliest outbound first. */
-async function fetchBookings(universityId: string, date: string): Promise<BookingRow[]> {
-  const all: BookingRow[] = [];
-  for (let from = 0; ; from += PAGE) {
-    const page = unwrap(
-      await supabase
-        .from('pickup_choices')
-        .select(
-          'student_id, outbound_time, return_time, stop_name, return_stop_name, students(full_name, transport_number), stops!pickup_choices_stop_id_fkey(name), return_stop:stops!pickup_choices_return_stop_id_fkey(name)',
-        )
-        .eq('university_id', universityId)
-        .eq('service_date', date)
-        .order('student_id')
-        .range(from, from + PAGE - 1),
-    ) as unknown as BookingRow[];
-    all.push(...page);
-    if (page.length < PAGE) break;
-  }
-  return all.sort(
-    (a, b) =>
-      (a.outbound_time ?? '99').localeCompare(b.outbound_time ?? '99') ||
-      (a.students?.full_name ?? '').localeCompare(b.students?.full_name ?? '', 'ar'),
-  );
-}
-
-function BookingsList({ date, universityId }: { date: string; universityId: string }) {
+function BookingsList({ seats, date }: { seats: Seat[]; date: string }) {
   const s = t.admin.pickups;
   const c = s.columns;
   const searchId = useId();
   const [search, setSearch] = useState('');
-  const bookings = useQuery({
-    queryKey: ['pickup-bookings', universityId, date],
-    queryFn: () => fetchBookings(universityId, date),
-  });
-  const stopOf = (r: BookingRow) => r.stops?.name ?? r.stop_name ?? t.pickup.unknown;
-  const returnStopOf = (r: BookingRow) => r.return_stop?.name ?? r.return_stop_name ?? t.pickup.unknown;
+  const lineOf = (leg: Leg | null) => leg?.route_name ?? (leg ? s.noLine : t.pickup.unknown);
+  const who = (x: Seat) => (x.base.passenger_type === 'patient' ? x.base.booked_by_name ?? '' : '');
 
-  const exportRows = (rows: BookingRow[]) =>
+  const exportRows = (rows: Seat[]) =>
     exportSheet(
       `${s.sheet}-${date}`,
-      rows.map((r) => ({
-        [c.name]: r.students?.full_name ?? '',
-        [c.transport]: r.students?.transport_number ?? '',
-        [c.outboundTime]: clockOr(r.outbound_time),
-        [c.outboundStop]: stopOf(r),
-        [c.returnTime]: clockOr(r.return_time),
-        [c.returnStop]: returnStopOf(r),
+      rows.map((x) => ({
+        [c.name]: x.base.full_name,
+        [c.type]: typeLabel(x.base),
+        [c.bookedBy]: who(x),
+        [c.transport]: x.base.transport_number ?? '',
+        [c.phone]: x.base.phone ?? '',
+        [c.outboundTime]: clockOr(x.outbound?.slot ?? null),
+        [c.outboundStop]: x.outbound?.stop_name ?? '',
+        [c.outboundLine]: lineOf(x.outbound),
+        [c.returnTime]: clockOr(x.return?.slot ?? null),
+        [c.returnStop]: x.return?.stop_name ?? '',
+        [c.returnLine]: lineOf(x.return),
       })),
     );
 
+  const q = foldArabic(search);
+  const rows = q
+    ? seats.filter((x) =>
+        foldArabic(`${x.base.full_name} ${x.base.transport_number ?? ''} ${x.base.booked_by_name ?? ''} ${x.base.booked_by_transport ?? ''}`).includes(q),
+      )
+    : seats;
   return (
-    <QueryState query={bookings}>
-      {(all) => {
-        const q = foldArabic(search);
-        const rows = q
-          ? all.filter((r) => foldArabic(`${r.students?.full_name ?? ''} ${r.students?.transport_number ?? ''}`).includes(q))
-          : all;
-        return (
-          <div className="space-y-3" data-testid="pickup-bookings">
-            <div className="flex flex-wrap items-end gap-3">
-              <Field label={s.search} htmlFor={searchId} className="min-w-[220px] flex-1">
-                <div className="relative">
-                  <Input id={searchId} placeholder={s.search} value={search} onChange={(e) => setSearch(e.target.value)} className="ps-9" data-testid="pickup-bookings-search" />
-                  <Search className="pointer-events-none absolute start-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted" aria-hidden />
-                </div>
-              </Field>
-              <Button variant="outline" onClick={() => exportRows(rows)} disabled={!rows.length} data-testid="pickup-bookings-export">
-                <FileSpreadsheet className="h-4 w-4" aria-hidden />
-                {s.export}
-              </Button>
-            </div>
-            {rows.length ? (
-              <DataList
-                rows={rows}
-                rowKey={(r) => r.student_id}
-                cardTitle={(r) => r.students?.full_name}
-                columns={[
-                  { key: 'name', header: c.name, cell: (r) => r.students?.full_name, mobileHidden: true },
-                  {
-                    key: 'transport',
-                    header: c.transport,
-                    cell: (r) => (
-                      <span className="num font-mono" dir="ltr">
-                        {r.students?.transport_number}
-                      </span>
-                    ),
-                  },
-                  { key: 'outboundTime', header: c.outboundTime, cell: (r) => <span className="num">{clockOr(r.outbound_time)}</span> },
-                  { key: 'outboundStop', header: c.outboundStop, cell: stopOf },
-                  { key: 'returnTime', header: c.returnTime, cell: (r) => <span className="num">{clockOr(r.return_time)}</span> },
-                  { key: 'returnStop', header: c.returnStop, cell: returnStopOf },
-                ]}
-              />
-            ) : (
-              <p className="text-sm text-muted">{s.noMatch}</p>
-            )}
+    <div className="space-y-3" data-testid="pickup-bookings">
+      <div className="flex flex-wrap items-end gap-3">
+        <Field label={s.search} htmlFor={searchId} className="min-w-[220px] flex-1">
+          <div className="relative">
+            <Input id={searchId} placeholder={s.search} value={search} onChange={(e) => setSearch(e.target.value)} className="ps-9" data-testid="pickup-bookings-search" />
+            <Search className="pointer-events-none absolute start-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted" aria-hidden />
           </div>
-        );
-      }}
-    </QueryState>
+        </Field>
+        <Button variant="outline" onClick={() => exportRows(rows)} disabled={!rows.length} data-testid="pickup-bookings-export">
+          <FileSpreadsheet className="h-4 w-4" aria-hidden />
+          {s.export}
+        </Button>
+      </div>
+      {rows.length ? (
+        <DataList
+          rows={rows}
+          rowKey={(x) => x.id}
+          cardTitle={(x) => x.base.full_name}
+          columns={[
+            { key: 'name', header: c.name, cell: (x) => x.base.full_name, mobileHidden: true },
+            {
+              key: 'type',
+              header: c.type,
+              cell: (x) => (
+                <span className="flex flex-wrap items-center gap-1">
+                  <Badge tone={TYPE_TONE[x.base.passenger_type]}>{typeLabel(x.base)}</Badge>
+                  {who(x) ? <span className="text-xs text-muted">{s.withStudent(who(x))}</span> : null}
+                </span>
+              ),
+            },
+            {
+              key: 'transport',
+              header: c.transport,
+              cell: (x) => (
+                <span className="num font-mono" dir="ltr">
+                  {x.base.transport_number ?? x.base.phone}
+                </span>
+              ),
+            },
+            {
+              key: 'outbound',
+              header: c.outboundTime,
+              cell: (x) => (
+                <span>
+                  <span className="num">{clockOr(x.outbound?.slot ?? null)}</span> — {x.outbound?.stop_name ?? t.pickup.unknown}
+                  <span className="block text-xs text-muted">{lineOf(x.outbound)}</span>
+                </span>
+              ),
+            },
+            {
+              key: 'return',
+              header: c.returnTime,
+              cell: (x) => (
+                <span>
+                  <span className="num">{clockOr(x.return?.slot ?? null)}</span> — {x.return?.stop_name ?? t.pickup.unknown}
+                  <span className="block text-xs text-muted">{lineOf(x.return)}</span>
+                </span>
+              ),
+            },
+          ]}
+        />
+      ) : (
+        <p className="text-sm text-muted">{s.noMatch}</p>
+      )}
+    </div>
   );
 }

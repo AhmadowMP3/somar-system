@@ -521,14 +521,13 @@ test('15. seat booking: window from the settings, one locked booking of outbound
     await pickUniversity(page, uni.id);
     await page.goto('/admin/pickups');
     await expect(page.getByTestId('pickup-summary')).toContainText('حجز 1 من أصل');
-    const areas = page.getByTestId('pickup-areas');
-    await expect(areas).toContainText('ذهاب الساعة 10:00 ص');
-    // grouped under the stop's area (or «بدون منطقة» when the stop has none)
-    await expect(areas.getByTestId('pickup-stop-row').filter({ hasText: 'ساحة جامعة' })).toBeVisible();
-    await areas.getByTestId('pickup-stop-row').filter({ hasText: 'ساحة جامعة' }).click();
-    await expect(areas).toContainText(st.transportNumber);
-    const returns = page.getByTestId('pickup-returns');
-    await expect(returns).toContainText('عودة الساعة 2:00 م');
+    // grouped by line; the test university's only line leaves at 7:00, so a 10:00 seat has no line
+    const outbound = page.getByTestId('pickup-lines-outbound');
+    await expect(outbound.getByTestId('pickup-line')).toContainText('خارج الخطوط');
+    await outbound.getByTestId('pickup-stop-row').filter({ hasText: 'ساحة جامعة' }).click();
+    await expect(outbound).toContainText(st.transportNumber);
+    await expect(outbound).toContainText('حجز 10:00 ص');
+    const returns = page.getByTestId('pickup-lines-return');
     await expect(returns).toContainText('الرجاء');
     const bookings = page.getByTestId('pickup-bookings');
     await page.getByTestId('pickup-bookings-search').fill(st.transportNumber);

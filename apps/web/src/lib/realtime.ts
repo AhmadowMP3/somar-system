@@ -9,14 +9,14 @@ import { supabase } from './supabase';
  */
 const TABLE_QUERIES: Record<string, string[]> = {
   universities: ['universities', 'logo', 'me', 'admin-dashboard'],
-  colleges: ['colleges', 'student-form', 'students', 'student', 'attendance-by-college'],
+  colleges: ['colleges', 'student-form', 'students', 'student', 'attendance-by-college', 'my-college-patients'],
   areas: ['areas', 'area-mapping', 'student-form', 'my-setup', 'schedule-stats', 'work-day-stats', 'pickup-outbound-stats'],
   packages: ['packages', 'package-subscribers', 'student-dashboard', 'admin-dashboard'],
-  routes: ['routes', 'pickup-return-times', 'route-path'],
-  route_stops: ['routes', 'route-path'],
-  stops: ['stops', 'routes', 'pickup-outbound-stats', 'pickup-return-stats', 'pickup-bookings', 'route-path', 'work-day-stats'],
-  profiles: ['me', 'supervisors', 'scan-supervisors', 'audit-actors', 'student'],
-  students: ['students', 'student', 'student-dashboard', 'admin-dashboard', 'active-students', 'cards', 'student-form', 'setup-progress', 'my-setup', 'me', 'package-subscribers', 'attendance-by-college', 'work-day-stats', 'schedule-stats', 'pickup-bookings', 'pickup-people'],
+  routes: ['routes', 'pickup-return-times', 'route-path', 'pickup-passengers'],
+  route_stops: ['routes', 'route-path', 'pickup-passengers'],
+  stops: ['stops', 'routes', 'pickup-outbound-stats', 'pickup-return-stats', 'pickup-bookings', 'route-path', 'work-day-stats', 'pickup-passengers'],
+  profiles: ['me', 'supervisors', 'scan-supervisors', 'audit-actors', 'student', 'pickup-passengers'],
+  students: ['students', 'student', 'student-dashboard', 'admin-dashboard', 'active-students', 'cards', 'student-form', 'setup-progress', 'my-setup', 'me', 'package-subscribers', 'attendance-by-college', 'work-day-stats', 'schedule-stats', 'pickup-bookings', 'pickup-people', 'pickup-passengers', 'my-college-patients'],
   subscriptions: ['student-dashboard', 'student', 'students', 'adjustments', 'package-subscribers', 'admin-dashboard', 'cards'],
   subscription_adjustments: ['adjustments', 'student-dashboard', 'student', 'admin-dashboard'],
   scans: ['scan-log', 'student-scans', 'my-scans-today', 'student-dashboard', 'admin-dashboard', 'student', 'bus-stats', 'bus-riders'],
@@ -25,9 +25,10 @@ const TABLE_QUERIES: Record<string, string[]> = {
   notifications: ['notifications', 'unread-count', 'staff-notifications', 'student-dashboard'],
   notification_reads: ['notifications', 'unread-count', 'staff-notifications'],
   recurring_notifications: ['recurring'],
-  pickup_choices: ['my-pickups', 'pickup-outbound-stats', 'pickup-return-stats', 'pickup-days', 'pickup-people', 'pickup-bookings'],
+  pickup_choices: ['my-pickups', 'pickup-outbound-stats', 'pickup-return-stats', 'pickup-days', 'pickup-people', 'pickup-bookings', 'pickup-passengers'],
   student_schedule: ['student-schedule', 'schedule-stats', 'setup-progress', 'my-setup', 'attendance-by-college'],
   audit_log: ['audit', 'audit-actors'],
+  pickup_patients: ['my-patients', 'pickup-passengers', 'pickup-days'],
   buses: ['buses', 'bus-stats', 'scan-buses'],
 };
 

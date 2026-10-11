@@ -1,12 +1,12 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { ChevronLeft, Clock, Lock, MapPinned } from 'lucide-react';
-import { useState } from 'react';
+import { ChevronLeft, Clock, Lock, MapPinned, UserRound } from 'lucide-react';
+import { useId, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { formatClock, formatDate, OUTBOUND_SLOTS, RETURN_SLOTS } from '@somar/shared';
 import { useAuth } from '@/app/auth';
 import { SearchPicker } from '@/components/SearchPicker';
 import { ConfirmDialog, useToast } from '@/components/ui/overlay';
-import { Button, Card, CardTitle } from '@/components/ui/primitives';
+import { Button, Card, CardTitle, Field, Input, Select } from '@/components/ui/primitives';
 import { ListSkeleton, PageHeader } from '@/components/ui/states';
 import { t } from '@/i18n/ar';
 import { errorMessage } from '@/lib/errors';
@@ -34,6 +34,27 @@ type Choice = {
 };
 /** What a summary shows: a saved booking, or the one about to be confirmed. */
 type Booking = { outbound_time: string | null; stop: string | null; return_time: string | null; return_stop: string | null };
+/** A patient's seat as the student fills it in (dentistry students bring patients). */
+type PatientDraft = { full_name: string; phone: string; outbound_time: string; stop_id: string; return_time: string; return_stop_id: string };
+type SavedPatient = Booking & { seq: number; full_name: string; phone: string };
+type PatientRow = {
+  seq: number;
+  full_name: string;
+  phone: string;
+  outbound_time: string;
+  return_time: string;
+  stop_name: string | null;
+  return_stop_name: string | null;
+  stops: { name: string } | null;
+  return_stop: { name: string } | null;
+};
+
+const MAX_PATIENTS = 5;
+const emptyPatient = (): PatientDraft => ({ full_name: '', phone: '', outbound_time: '', stop_id: '', return_time: '', return_stop_id: '' });
+const patientComplete = (x: PatientDraft) =>
+  x.full_name.trim().length >= 2 &&
+  /^\+?[0-9]{7,15}$/.test(x.phone.replace(/[\s\-().]/g, '')) &&
+  Boolean(x.outbound_time && x.stop_id && x.return_time && x.return_stop_id);
 
 const toBooking = (c: Choice): Booking => ({
   outbound_time: c.outbound_time,
@@ -72,6 +93,49 @@ function useMyChoices(win: PickupWindow | undefined) {
           )
           .in('service_date', [win?.today as string, win?.service_date as string]),
       ) as unknown as Choice[],
+  });
+}
+
+/** Students of a college the staff flagged (dentistry) may also book seats for their patients. */
+function usePatientsAllowed(studentId: string | undefined) {
+  return useQuery({
+    queryKey: ['my-college-patients', studentId],
+    enabled: Boolean(studentId),
+    queryFn: async () => {
+      const row = unwrap(
+        await supabase.from('students').select('colleges(allows_patients)').eq('id', studentId as string).maybeSingle(),
+      ) as unknown as { colleges: { allows_patients: boolean } | null } | null;
+      return Boolean(row?.colleges?.allows_patients);
+    },
+  });
+}
+
+function useMyPatients(serviceDate: string | undefined) {
+  return useQuery({
+    queryKey: ['my-patients', serviceDate],
+    enabled: Boolean(serviceDate),
+    queryFn: async () =>
+      (
+        unwrap(
+          await supabase
+            .from('pickup_patients')
+            .select(
+              'seq, full_name, phone, outbound_time, return_time, stop_name, return_stop_name, stops!pickup_patients_stop_id_fkey(name), return_stop:stops!pickup_patients_return_stop_id_fkey(name)',
+            )
+            .eq('service_date', serviceDate as string)
+            .order('seq'),
+        ) as unknown as PatientRow[]
+      ).map(
+        (r): SavedPatient => ({
+          seq: r.seq,
+          full_name: r.full_name,
+          phone: r.phone,
+          outbound_time: r.outbound_time,
+          stop: r.stops?.name ?? r.stop_name,
+          return_time: r.return_time,
+          return_stop: r.return_stop?.name ?? r.return_stop_name,
+        }),
+      ),
   });
 }
 
@@ -156,6 +220,30 @@ function ChoiceSummary({ booking, testId }: { booking: Booking; testId?: string 
   );
 }
 
+function PatientsSummary({ patients, testId }: { patients: SavedPatient[]; testId?: string }) {
+  const p = t.pickup;
+  if (!patients.length) return null;
+  return (
+    <div className="space-y-2" data-testid={testId}>
+      <p className="text-sm font-bold">
+        {p.patientsSummary} (<span className="num">{patients.length}</span>)
+      </p>
+      {patients.map((x) => (
+        <div key={x.seq} className="space-y-2 rounded-lg border border-border p-3">
+          <p className="flex flex-wrap items-center gap-2 text-sm font-bold">
+            <UserRound className="h-4 w-4 text-brand-ink" aria-hidden />
+            {p.patientTitle(x.seq)}: {x.full_name}
+            <span className="num font-normal text-muted" dir="ltr">
+              {x.phone}
+            </span>
+          </p>
+          <ChoiceSummary booking={x} />
+        </div>
+      ))}
+    </div>
+  );
+}
+
 /** One row of slot radio buttons; a slot that cannot be picked is disabled. */
 function SlotPicker({
   slots,
@@ -196,6 +284,87 @@ function SlotPicker({
 
 const isSlot = (slots: readonly string[], value: string | undefined) => (value && slots.includes(value) ? value : '');
 
+/** The seat of one patient: name, phone, then the same four choices as the student's own seat. */
+function PatientForm({
+  index,
+  value,
+  onChange,
+  items,
+}: {
+  index: number;
+  value: PatientDraft;
+  onChange: (next: PatientDraft) => void;
+  items: { id: string; name: string }[];
+}) {
+  const p = t.pickup;
+  const nameId = useId();
+  const phoneId = useId();
+  const set = (patch: Partial<PatientDraft>) => onChange({ ...value, ...patch });
+  const returnAllowed = (slot: string) => !value.outbound_time || slot > value.outbound_time;
+  const n = index + 1;
+  return (
+    <fieldset className="space-y-4 rounded-xl border border-border p-4" data-testid={`pickup-patient-${n}`}>
+      <legend className="px-1 font-extrabold text-brand-ink">{p.patientTitle(n)}</legend>
+      <div className="grid gap-3 sm:grid-cols-2">
+        <Field label={p.patientName} htmlFor={nameId}>
+          <Input id={nameId} value={value.full_name} onChange={(e) => set({ full_name: e.target.value })} autoComplete="off" data-testid={`pickup-patient-${n}-name`} />
+        </Field>
+        <Field label={p.patientPhone} htmlFor={phoneId}>
+          <Input
+            id={phoneId}
+            type="tel"
+            inputMode="tel"
+            dir="ltr"
+            className="text-start"
+            value={value.phone}
+            onChange={(e) => set({ phone: e.target.value })}
+            data-testid={`pickup-patient-${n}-phone`}
+          />
+        </Field>
+      </div>
+      <div className="space-y-2">
+        <p className="text-sm font-bold">{p.outboundTime}</p>
+        <SlotPicker
+          slots={OUTBOUND_SLOTS}
+          value={value.outbound_time}
+          onChange={(slot) => set({ outbound_time: slot, return_time: value.return_time > slot ? value.return_time : '' })}
+          label={`${p.patientTitle(n)} — ${p.outboundTime}`}
+          testId={`pickup-patient-${n}-outbound-times`}
+        />
+      </div>
+      <SearchPicker
+        items={items}
+        value={value.stop_id}
+        onChange={(id) => set({ stop_id: id })}
+        placeholder={p.search}
+        label={p.outboundStop}
+        emptyText={p.noStops}
+        testId={`pickup-patient-${n}-stop`}
+      />
+      <div className="space-y-2">
+        <p className="text-sm font-bold">{p.returnTime}</p>
+        <SlotPicker
+          slots={RETURN_SLOTS}
+          value={value.return_time}
+          onChange={(slot) => set({ return_time: slot })}
+          label={`${p.patientTitle(n)} — ${p.returnTime}`}
+          isEnabled={returnAllowed}
+          testId={`pickup-patient-${n}-return-times`}
+        />
+      </div>
+      <SearchPicker
+        items={items}
+        value={value.return_stop_id}
+        onChange={(id) => set({ return_stop_id: id })}
+        placeholder={p.search}
+        label={p.returnStop}
+        emptyText={p.noStops}
+        testId={`pickup-patient-${n}-return-stop`}
+      />
+    </fieldset>
+  );
+}
+
 export function PickupPage() {
   const p = t.pickup;
   const { me } = useAuth();
@@ -213,6 +382,13 @@ export function PickupPage() {
   const [returnStopPick, setReturnStopId] = useState<string | null>(null);
   const [confirming, setConfirming] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const patientsAllowed = usePatientsAllowed(me?.student?.id);
+  const myPatients = useMyPatients(win.data?.service_date);
+  const todayPatients = useMyPatients(win.data?.today);
+  const [withPatients, setWithPatients] = useState(false);
+  const [patients, setPatients] = useState<PatientDraft[]>([emptyPatient()]);
+  const countId = useId();
+  const sentPatients = withPatients && patientsAllowed.data ? patients : [];
 
   const items = (stops.data ?? []).filter((s) => s.is_active).map((s) => ({ id: s.id, name: s.name }));
   const homeStop = items.some((s) => s.id === defaults.data?.stopId) ? (defaults.data?.stopId ?? '') : '';
@@ -233,12 +409,14 @@ export function PickupPage() {
           p_stop_id: stopId,
           p_return_time: returnTime,
           p_return_stop_id: returnStopId,
+          p_patients: sentPatients.map((x) => ({ ...x, full_name: x.full_name.trim(), phone: x.phone.trim() })),
         }),
       ),
     onSuccess: () => {
       toast.success(p.saved);
       setConfirming(false);
       void qc.invalidateQueries({ queryKey: ['my-pickups'] });
+      void qc.invalidateQueries({ queryKey: ['my-patients'] });
     },
     onError: (e) => {
       setConfirming(false);
@@ -258,6 +436,11 @@ export function PickupPage() {
       setError(p.missing);
       return;
     }
+    const incomplete = sentPatients.findIndex((x) => !patientComplete(x));
+    if (incomplete >= 0) {
+      setError(p.patientsMissing(incomplete + 1));
+      return;
+    }
     setError(null);
     setConfirming(true);
   };
@@ -273,6 +456,7 @@ export function PickupPage() {
             {p.lockedTitle}
           </CardTitle>
           <ChoiceSummary booking={toBooking(tomorrow)} />
+          <PatientsSummary patients={myPatients.data ?? []} testId="pickup-locked-patients" />
           <p className="text-xs text-muted">{p.lockedNote}</p>
         </Card>
       ) : w.open ? (
@@ -311,6 +495,50 @@ export function PickupPage() {
               testId="pickup-return-stop"
             />
           </div>
+          {patientsAllowed.data ? (
+            <div className="space-y-4 border-t border-border pt-4" data-testid="pickup-patients">
+              <label className="flex min-h-touch items-center gap-3 text-base font-bold">
+                <input
+                  type="checkbox"
+                  className="h-6 w-6 accent-brand-ink"
+                  checked={withPatients}
+                  onChange={(e) => setWithPatients(e.target.checked)}
+                  data-testid="pickup-has-patients"
+                />
+                {p.hasPatients}
+              </label>
+              {withPatients ? (
+                <>
+                  <Field label={p.patientsCount} htmlFor={countId} className="max-w-[12rem]">
+                    <Select
+                      id={countId}
+                      value={patients.length}
+                      onChange={(e) => {
+                        const n = Number(e.target.value);
+                        setPatients((list) => Array.from({ length: n }, (_, i) => list[i] ?? emptyPatient()));
+                      }}
+                      data-testid="pickup-patients-count"
+                    >
+                      {Array.from({ length: MAX_PATIENTS }, (_, i) => (
+                        <option key={i + 1} value={i + 1}>
+                          {i + 1}
+                        </option>
+                      ))}
+                    </Select>
+                  </Field>
+                  {patients.map((x, i) => (
+                    <PatientForm
+                      key={i}
+                      index={i}
+                      value={x}
+                      items={items}
+                      onChange={(next) => setPatients((list) => list.map((old, j) => (j === i ? next : old)))}
+                    />
+                  ))}
+                </>
+              ) : null}
+            </div>
+          ) : null}
           {error ? (
             <p role="alert" className="rounded-lg bg-danger/10 p-3 text-sm font-semibold text-danger">
               {error}
@@ -333,6 +561,7 @@ export function PickupPage() {
           {p.todayChoice} ({dayLabel(w.today)})
         </p>
         {today ? <ChoiceSummary booking={toBooking(today)} /> : <p className="text-sm text-muted">{p.noTodayChoice}</p>}
+        <PatientsSummary patients={todayPatients.data ?? []} />
       </Card>
 
       <ConfirmDialog
@@ -347,6 +576,20 @@ export function PickupPage() {
           booking={{ outbound_time: outboundTime, stop: nameOf(stopId), return_time: returnTime, return_stop: nameOf(returnStopId) }}
           testId="pickup-confirm-summary"
         />
+        <div className="mt-3">
+          <PatientsSummary
+            patients={sentPatients.map((x, i) => ({
+              seq: i + 1,
+              full_name: x.full_name.trim(),
+              phone: x.phone.trim(),
+              outbound_time: x.outbound_time,
+              stop: nameOf(x.stop_id),
+              return_time: x.return_time,
+              return_stop: nameOf(x.return_stop_id),
+            }))}
+            testId="pickup-confirm-patients"
+          />
+        </div>
       </ConfirmDialog>
     </div>
   );

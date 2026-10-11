@@ -1,4 +1,4 @@
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient, type UseQueryResult } from '@tanstack/react-query';
 import { Lock, Pencil, Plus } from 'lucide-react';
 import { useId, useMemo, useState, type FormEvent } from 'react';
 import { Link } from 'react-router-dom';
@@ -7,12 +7,12 @@ import { useScope, type University } from '@/app/auth';
 import { SearchPicker } from '@/components/SearchPicker';
 import { Dialog, useToast } from '@/components/ui/overlay';
 import { Button, Card, Field, Input, Select, Switch } from '@/components/ui/primitives';
-import { DataList, EmptyState, PageHeader, QueryState } from '@/components/ui/states';
+import { DataList, EmptyState, PageHeader, QueryState, type Column } from '@/components/ui/states';
 import { t } from '@/i18n/ar';
 import { api } from '@/lib/api';
 import { errorMessage } from '@/lib/errors';
 import { LOGO_BUCKET, signedUrl, supabase, unwrap } from '@/lib/supabase';
-import { ActiveBadge, useAreas, useColleges, useIsAdmin, useStopOptions, WithUniversity, type Named } from './common';
+import { ActiveBadge, useAreas, useColleges, useIsAdmin, useStopOptions, WithUniversity, type College, type Named } from './common';
 
 function LogoThumb({ path }: { path: string | null }) {
   const q = useQuery({ queryKey: ['logo', path], enabled: Boolean(path), queryFn: () => signedUrl(LOGO_BUCKET, path) });
@@ -199,14 +199,16 @@ function NamedItemsPage({
   emptyLabel,
   useItems,
   extraActions,
+  extraColumns,
 }: {
   table: 'colleges' | 'areas';
   title: string;
   addLabel: string;
   nameLabel: string;
   emptyLabel: string;
-  useItems: typeof useColleges;
+  useItems: (universityId: string) => UseQueryResult<Named[]>;
   extraActions?: React.ReactNode;
+  extraColumns?: (universityId: string) => Column<Named>[];
 }) {
   return (
     <WithUniversity>
@@ -220,6 +222,7 @@ function NamedItemsPage({
           emptyLabel={emptyLabel}
           useItems={useItems}
           extraActions={extraActions}
+          extraColumns={extraColumns?.(universityId)}
         />
       )}
     </WithUniversity>
@@ -235,6 +238,7 @@ function NamedItemsBody({
   emptyLabel,
   useItems,
   extraActions,
+  extraColumns = [],
 }: {
   universityId: string;
   table: 'colleges' | 'areas';
@@ -242,8 +246,9 @@ function NamedItemsBody({
   addLabel: string;
   nameLabel: string;
   emptyLabel: string;
-  useItems: typeof useColleges;
+  useItems: (universityId: string) => UseQueryResult<Named[]>;
   extraActions?: React.ReactNode;
+  extraColumns?: Column<Named>[];
 }) {
   const query = useItems(universityId);
   const qc = useQueryClient();
@@ -303,6 +308,7 @@ function NamedItemsBody({
                   />
                 ),
               },
+              ...extraColumns,
               {
                 key: 'actions',
                 header: t.common.actions,
@@ -344,7 +350,42 @@ function NamedItemsBody({
 export function CollegesPage() {
   const c = t.admin.colleges;
   return (
-    <NamedItemsPage table="colleges" title={c.title} addLabel={c.add} nameLabel={c.name} emptyLabel={c.empty} useItems={useColleges} />
+    <NamedItemsPage
+      table="colleges"
+      title={c.title}
+      addLabel={c.add}
+      nameLabel={c.name}
+      emptyLabel={c.empty}
+      useItems={useColleges}
+      extraColumns={(universityId) => [
+        { key: 'patients', header: c.patients, cell: (r) => <PatientsSwitch college={r as College} universityId={universityId} /> },
+      ]}
+    />
+  );
+}
+
+/** Students of a college with this switch on may book seats for their patients (dentistry). */
+function PatientsSwitch({ college, universityId }: { college: College; universityId: string }) {
+  const qc = useQueryClient();
+  const toast = useToast();
+  const save = useMutation({
+    mutationFn: async (on: boolean) => {
+      const saved = unwrap(await supabase.from('colleges').update({ allows_patients: on }).eq('id', college.id).select('id')) as unknown[] | null;
+      if (!saved?.length) throw new Error('NOT_SAVED');
+    },
+    onSuccess: () => toast.success(t.common.success),
+    onError: (e) => toast.error(e instanceof Error && e.message === 'NOT_SAVED' ? (t.errors.FORBIDDEN ?? '') : errorMessage(e)),
+    onSettled: () => void qc.invalidateQueries({ queryKey: ['colleges', universityId] }),
+  });
+  return (
+    <Switch
+      checked={college.allows_patients}
+      aria-label={`${t.admin.colleges.patients} — ${college.name}`}
+      title={t.admin.colleges.patientsHint}
+      disabled={save.isPending}
+      onCheckedChange={(v) => save.mutate(v)}
+      data-testid="college-patients"
+    />
   );
 }
 
