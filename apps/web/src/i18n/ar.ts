@@ -637,6 +637,9 @@ export const t = {
       hidePeople: 'إخفاء الركاب',
       withStudent: (name: string) => `مع الطالب ${name}`,
       types: { student: 'طالب', supervisor: 'مشرف', doctor: 'دكتور', employee: 'موظف', patient: 'مريض' } as Record<string, string>,
+      tripOrdinals: ['الأولى', 'الثانية', 'الثالثة', 'الرابعة', 'الخامسة'],
+      outboundTrip: (ordinal: string | undefined, time: string) => (ordinal ? `الرحلة ${ordinal} — ذهاب ${time}` : `ذهاب ${time}`),
+      returnTrip: (ordinal: string | undefined, time: string) => (ordinal ? `العودة ${ordinal} — ${time}` : `العودة ${time}`),
     },
 
     stats: {

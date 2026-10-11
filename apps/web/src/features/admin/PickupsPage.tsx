@@ -1,7 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { Bus, ChevronDown, FileSpreadsheet, MapPin, Search } from 'lucide-react';
 import { useId, useMemo, useState } from 'react';
-import { foldArabic, formatClock, formatDate } from '@somar/shared';
+import { foldArabic, formatClock, formatDate, OUTBOUND_SLOTS, RETURN_SLOTS } from '@somar/shared';
 import { Badge, Button, Card, Field, Input, Select } from '@/components/ui/primitives';
 import { DataList, EmptyState, PageHeader, QueryState } from '@/components/ui/states';
 import { t } from '@/i18n/ar';
@@ -55,6 +55,16 @@ function dayLabel(date: string): string {
 }
 
 const clockOr = (time: string | null) => formatClock(time) || t.pickup.unknown;
+const hhmm = (time: string | null) => (time ? time.slice(0, 5) : null);
+
+/** «الرحلة الأولى — ذهاب 8:00 ص»: each booked time is one trip (8 → first, 10 → second, 12 → third). */
+function tripTitle(direction: Direction, slot: string | null): string {
+  const s = t.admin.pickups;
+  if (!slot) return s.noTime;
+  const slots: readonly string[] = direction === 'outbound' ? OUTBOUND_SLOTS : RETURN_SLOTS;
+  const ordinal = s.tripOrdinals[slots.indexOf(hhmm(slot) ?? '')];
+  return direction === 'outbound' ? s.outboundTrip(ordinal, formatClock(slot)) : s.returnTrip(ordinal, formatClock(slot));
+}
 const typeLabel = (leg: Leg) => t.admin.pickups.types[leg.passenger_type] ?? leg.passenger_type;
 
 const PAGE = 1000;
@@ -213,18 +223,33 @@ function PickupsBody({ universityId }: { universityId: string }) {
                 <p className="text-sm text-muted">{s.linesHint}</p>
               </div>
               {(['outbound', 'return'] as const).map((direction) => {
-                const lines = groupByLine(rows.filter((r) => r.direction === direction));
+                const legs = rows.filter((r) => r.direction === direction);
+                // one section per trip (booked time), old bookings without a time last
+                const slots = [...new Set(legs.map((r) => r.slot))].sort((a, b) => (a ?? '99').localeCompare(b ?? '99'));
                 return (
-                  <section key={direction} className="space-y-3" data-testid={`pickup-lines-${direction}`}>
+                  <section key={direction} className="space-y-4" data-testid={`pickup-lines-${direction}`}>
                     <h3 className="text-base font-extrabold">{direction === 'outbound' ? s.outboundLines : s.returnLines}</h3>
-                    {lines.length ? (
-                      <ul className="grid gap-4 lg:grid-cols-2">
-                        {lines.map((line) => (
-                          <li key={line.key}>
-                            <LineCard line={line} />
-                          </li>
-                        ))}
-                      </ul>
+                    {slots.length ? (
+                      slots.map((slot) => {
+                        const tripLegs = legs.filter((r) => r.slot === slot);
+                        return (
+                          <div key={slot ?? 'none'} className="space-y-3 rounded-2xl border border-border bg-surface/60 p-3" data-testid="pickup-trip">
+                            <p className="flex flex-wrap items-center justify-between gap-2 font-extrabold text-brand-ink">
+                              <span className="num">{tripTitle(direction, slot)}</span>
+                              <Badge tone="info">
+                                <span className="num">{s.seats(tripLegs.length)}</span>
+                              </Badge>
+                            </p>
+                            <ul className="grid gap-4 lg:grid-cols-2">
+                              {groupByLine(tripLegs).map((line) => (
+                                <li key={line.key}>
+                                  <LineCard line={line} />
+                                </li>
+                              ))}
+                            </ul>
+                          </div>
+                        );
+                      })
                     ) : (
                       <p className="text-sm text-muted">{s.noSeats}</p>
                     )}
