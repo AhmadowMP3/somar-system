@@ -42,10 +42,14 @@ function StopsBody({ universityId }: { universityId: string }) {
     onError: (e) => toast.error(errorMessage(e)),
   });
   const toggle = useMutation({
-    mutationFn: async ({ id, active }: { id: string; active: boolean }) =>
-      unwrap(await supabase.from('stops').update({ is_active: active }).eq('id', id)),
-    onSuccess: () => void qc.invalidateQueries({ queryKey: ['stops', universityId] }),
-    onError: (e) => toast.error(errorMessage(e)),
+    // row-level security turns a refused update into "0 rows" without an error: count the rows so it is never silent
+    mutationFn: async ({ id, active }: { id: string; active: boolean }) => {
+      const saved = unwrap(await supabase.from('stops').update({ is_active: active }).eq('id', id).select('id')) as unknown[] | null;
+      if (!saved?.length) throw new Error('NOT_SAVED');
+    },
+    onSuccess: (_res, { active }) => toast.success(active ? s.activated : s.deactivated),
+    onError: (e) => toast.error(e instanceof Error && e.message === 'NOT_SAVED' ? s.notSaved : errorMessage(e)),
+    onSettled: () => void qc.invalidateQueries({ queryKey: ['stops', universityId] }),
   });
   const areaName = (id: string | null) => areas.data?.find((a) => a.id === id)?.name ?? t.common.none;
   const [term, setTerm] = useState('');
@@ -294,7 +298,10 @@ function StopFormDialog({ universityId, stop, onClose }: { universityId: string;
         lng: found?.lng ?? null,
         area_id: form.area_id || null,
       };
-      if (stop) unwrap(await supabase.from('stops').update(row).eq('id', stop.id));
+      if (stop) {
+        const saved = unwrap(await supabase.from('stops').update(row).eq('id', stop.id).select('id')) as unknown[] | null;
+        if (!saved?.length) throw new Error('NOT_SAVED');
+      }
       else unwrap(await supabase.from('stops').insert(row));
     },
     onSuccess: () => {
@@ -303,7 +310,7 @@ function StopFormDialog({ universityId, stop, onClose }: { universityId: string;
       void qc.invalidateQueries({ queryKey: ['routes', universityId] });
       onClose();
     },
-    onError: (e) => toast.error(errorMessage(e)),
+    onError: (e) => toast.error(e instanceof Error && e.message === 'NOT_SAVED' ? t.admin.stops.notSaved : errorMessage(e)),
   });
   const submit = (e: FormEvent) => {
     e.preventDefault();
