@@ -7,7 +7,7 @@ import { router } from '@/app/router';
 import { ToastProvider } from '@/components/ui/overlay';
 import { t } from '@/i18n/ar';
 import { isConfigured } from '@/lib/config';
-import { registerServiceWorker } from '@/lib/pwa';
+import { registerServiceWorker, reloadOnNavigationIfUpdated } from '@/lib/pwa';
 import '@/styles/index.css';
 
 const queryClient = new QueryClient({
@@ -30,6 +30,7 @@ function ConfigMissing() {
 
 document.title = t.appName;
 registerServiceWorker();
+router.subscribe(() => reloadOnNavigationIfUpdated());
 
 createRoot(document.getElementById('root') as HTMLElement).render(
   <StrictMode>
