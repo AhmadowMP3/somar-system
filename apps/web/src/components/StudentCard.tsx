@@ -2,7 +2,7 @@ import QRCode from 'qrcode';
 import { qrPayload } from '@somar/shared';
 import { t } from '@/i18n/ar';
 import { cn } from '@/lib/utils';
-import { QrCode } from './QrCode';
+import { QrSvg } from './QrCode';
 
 type Box = { x: number; y: number; w: number; h: number };
 type Template = { src: string; W: number; H: number; box: { photo: Box & { r: number }; name: Box; number: Box; college: Box; qr: Box } };
@@ -103,7 +103,7 @@ export function CardFace({ card, className, style }: { card: CardValues; classNa
         {card.college}
       </p>
       <div className="absolute bg-white" style={pos(tpl, box.qr)}>
-        <QrCode token={card.qr_token} className="h-full w-full" label={card.transport_number} />
+        <QrSvg value={qrPayload(card.qr_token)} className="h-full w-full" label={card.transport_number} />
       </div>
     </article>
   );
