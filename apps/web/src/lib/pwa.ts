@@ -10,10 +10,10 @@ export function isStandalone(): boolean {
   );
 }
 
-/** How often an open app asks the server whether a newer version was published. */
-const UPDATE_CHECK_MS = 5 * 60_000;
-/** A pending update waits until the user has not touched the screen for this long. */
-const IDLE_BEFORE_RELOAD_MS = 20_000;
+/** How often an open app asks the server whether a newer version was published (owner: updates must land at once). */
+const UPDATE_CHECK_MS = 60_000;
+/** A pending update waits only for the current tap or keystroke to finish. */
+const IDLE_BEFORE_RELOAD_MS = 3_000;
 
 let reloadPending = false;
 let lastInteraction = Date.now();
@@ -35,10 +35,10 @@ function reloadIfSafe(force = false) {
 
 /**
  * Installs the service worker and keeps every open copy of the app on the latest version: it checks
- * for a new version every few minutes and whenever the app comes back to the screen; the new service
- * worker takes over at once (skipWaiting + clientsClaim in sw.ts) and the page then reloads itself at
- * a safe moment — while the app is in the background, on the next page change, or after a short idle
- * time with no field being typed in and no dialog open.
+ * for a new version every minute, when the app comes back to the screen or gets focus, and when the
+ * connection returns; the new service worker takes over at once (skipWaiting + clientsClaim in sw.ts)
+ * and the page reloads right away — unless a field is being typed in or a dialog is open, in which
+ * case it waits for that to finish (or for the next page change, or for the app to go to the background).
  */
 export function registerServiceWorker() {
   if (!('serviceWorker' in navigator) || import.meta.env.DEV) return;
@@ -64,6 +64,9 @@ export function registerServiceWorker() {
           else reloadIfSafe(true);
         });
         window.addEventListener('online', check);
+        window.addEventListener('focus', check);
+        window.addEventListener('pageshow', check);
+        check();
       })
       .catch(() => undefined);
   });
@@ -71,7 +74,7 @@ export function registerServiceWorker() {
   for (const type of ['pointerdown', 'keydown', 'input', 'scroll'] as const) {
     window.addEventListener(type, () => (lastInteraction = Date.now()), { passive: true, capture: true });
   }
-  setInterval(() => reloadIfSafe(), 5_000);
+  setInterval(() => reloadIfSafe(), 1_000);
 }
 
 /** Called on every in-app page change: the moment between two pages is a safe time to update. */

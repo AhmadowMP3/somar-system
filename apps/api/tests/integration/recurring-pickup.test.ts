@@ -167,7 +167,7 @@ describe('tomorrow seat booking', () => {
     ]);
   });
 
-  it('takes a stop of a line of the chosen trip only, keeps the line and the stop time, saves once and locks it', async () => {
+  it('takes a stop of a line of the chosen trip only, keeps the line and the stop time, and can be changed while open', async () => {
     await freeze('2026-10-05 18:00');
     expect((await book(asA, null, lineA, stopA)).error?.message).toBe('OUTBOUND_TIME_INVALID');
     expect((await book(asA, '09:00', lineA, stopA)).error?.message).toBe('OUTBOUND_TIME_INVALID');
@@ -184,7 +184,11 @@ describe('tomorrow seat booking', () => {
     const ok = await book(asA, '10:00', lineB, stopA);
     expect(ok.error).toBeNull();
     expect(ok.data).toBe('2026-10-06');
-    expect((await book(asA, '08:00', lineA, stopB)).error?.message).toBe('PICKUP_LOCKED');
+    // changing the booking while open replaces it (one row per day)
+    expect((await book(asA, '08:00', lineA, stopB)).error).toBeNull();
+    const changed = await asA.from('pickup_choices').select('outbound_time, outbound_route_id, outbound_stop_time');
+    expect(changed.data).toEqual([{ outbound_time: '08:00:00', outbound_route_id: lineA, outbound_stop_time: '07:45:00' }]);
+    expect((await book(asA, '10:00', lineB, stopA)).error).toBeNull();
     expect((await book(asB, '08:00', lineA, stopA)).error).toBeNull();
 
     const { data: own } = await asA

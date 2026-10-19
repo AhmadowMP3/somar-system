@@ -107,4 +107,14 @@ describe('bookings by line', () => {
 
     expect((await other.rpc('pickup_passengers', { p_university_id: fx.universityId, p_date: '2026-10-06' })).error?.message).toBe('FORBIDDEN');
   });
+
+  it('a changed booking replaces the patients as a whole', async () => {
+    expect((await book(dentist, [patient({ full_name: 'مريض بديل' })], lines.line2)).error).toBeNull();
+    const { data } = await dentist.from('pickup_patients').select('seq, full_name');
+    expect(data).toEqual([{ seq: 1, full_name: 'مريض بديل' }]);
+    expect((await book(dentist, [], lines.line2)).error).toBeNull();
+    expect((await dentist.from('pickup_patients').select('id')).data).toEqual([]);
+    const { data: seats } = await staff.rpc('pickup_passengers', { p_university_id: fx.universityId, p_date: '2026-10-06' });
+    expect(seats).toHaveLength(2);
+  });
 });

@@ -475,7 +475,7 @@ test('14. admin schedules a weekly notification for several days at a set time, 
   await expect(list).toContainText('متوقف');
 });
 
-test('15. seat booking: window from the settings, one locked outbound seat on a line of the chosen trip with the bus time, admin sees it', async ({ page }) => {
+test('15. seat booking: window from the settings, an outbound seat on a line of the chosen trip with the bus time, editable while open, admin sees it', async ({ page }) => {
   const st = await createE2EStudent(uni, { subscribe: true, photo: true, ready: true });
   const { data: lib } = await service.from('stops').select('id, name').eq('university_id', uni.id);
   const stopId = (name: string) => lib?.find((x) => x.name === name)?.id;
@@ -518,6 +518,20 @@ test('15. seat booking: window from the settings, one locked outbound seat on a 
     await expect(locked.getByTestId('pickup-current')).toHaveText('10:00 ص — ساحة جامعة');
     await expect(locked.getByTestId('pickup-current-line')).toHaveText('خط الواجهة — الرحلة الثانية');
     await expect(page.getByTestId('pickup-save')).toHaveCount(0);
+
+    // still editable while booking is open: the form opens filled in, the change replaces the booking
+    await page.getByTestId('pickup-edit').click();
+    await expect(page.getByTestId('pickup-stop-options').getByRole('radio', { name: /ساحة جامعة/ })).toHaveAttribute('aria-checked', 'true');
+    await page.getByTestId('pickup-stop-options').getByRole('radio', { name: /الرجاء/ }).click();
+    await expect(page.getByTestId('pickup-arrival')).toContainText('الساعة 8:50 ص');
+    await page.getByTestId('pickup-save').click();
+    await page.getByRole('dialog').getByRole('button', { name: 'تأكيد' }).click();
+    await expect(locked.getByTestId('pickup-current')).toHaveText('10:00 ص — الرجاء');
+    await page.getByTestId('pickup-edit').click();
+    await page.getByTestId('pickup-stop-options').getByRole('radio', { name: /ساحة جامعة/ }).click();
+    await page.getByTestId('pickup-save').click();
+    await page.getByRole('dialog').getByRole('button', { name: 'تأكيد' }).click();
+    await expect(locked.getByTestId('pickup-current')).toHaveText('10:00 ص — ساحة جامعة');
 
     await page.context().clearCookies();
     await page.evaluate(() => localStorage.clear());

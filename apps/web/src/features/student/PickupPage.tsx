@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Bus, ChevronLeft, Clock, Lock, MapPinned, Search, UserRound } from 'lucide-react';
+import { Bus, ChevronLeft, Clock, Lock, MapPinned, Pencil, Search, UserRound } from 'lucide-react';
 import { useId, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { foldArabic, formatClock, formatDate, OUTBOUND_SLOTS } from '@somar/shared';
@@ -34,6 +34,8 @@ type Option = {
 type Choice = {
   service_date: string;
   outbound_time: string | null;
+  stop_id: string | null;
+  outbound_route_id: string | null;
   /** Names and time saved with the booking: the stop or line may have changed since. */
   stop_name: string | null;
   outbound_route_name: string | null;
@@ -44,9 +46,11 @@ type Choice = {
 type Booking = { outbound_time: string | null; stop: string | null; line: string | null; stop_time: string | null };
 /** A patient's seat as the student fills it in (dentistry students bring patients). */
 type PatientDraft = { full_name: string; phone: string; outbound_time: string; option: string };
-type SavedPatient = Booking & { seq: number; full_name: string; phone: string };
+type SavedPatient = Booking & { seq: number; full_name: string; phone: string; option?: string };
 type PatientRow = {
   seq: number;
+  stop_id: string | null;
+  outbound_route_id: string | null;
   full_name: string;
   phone: string;
   outbound_time: string;
@@ -106,7 +110,9 @@ function useMyChoices(win: PickupWindow | undefined) {
       unwrap(
         await supabase
           .from('pickup_choices')
-          .select('service_date, outbound_time, stop_name, outbound_route_name, outbound_stop_time, stops!pickup_choices_stop_id_fkey(name)')
+          .select(
+            'service_date, outbound_time, stop_id, outbound_route_id, stop_name, outbound_route_name, outbound_stop_time, stops!pickup_choices_stop_id_fkey(name)',
+          )
           .in('service_date', [win?.today as string, win?.service_date as string]),
       ) as unknown as Choice[],
   });
@@ -162,7 +168,9 @@ function useMyPatients(serviceDate: string | undefined) {
         unwrap(
           await supabase
             .from('pickup_patients')
-            .select('seq, full_name, phone, outbound_time, stop_name, outbound_route_name, outbound_stop_time, stops!pickup_patients_stop_id_fkey(name)')
+            .select(
+              'seq, full_name, phone, outbound_time, stop_id, outbound_route_id, stop_name, outbound_route_name, outbound_stop_time, stops!pickup_patients_stop_id_fkey(name)',
+            )
             .eq('service_date', serviceDate as string)
             .order('seq'),
         ) as unknown as PatientRow[]
@@ -175,6 +183,7 @@ function useMyPatients(serviceDate: string | undefined) {
           stop: r.stops?.name ?? r.stop_name,
           line: r.outbound_route_name,
           stop_time: r.outbound_stop_time,
+          option: r.outbound_route_id && r.stop_id ? optionKey({ route_id: r.outbound_route_id, stop_id: r.stop_id }) : '',
         }),
       ),
   });
@@ -460,7 +469,9 @@ export function PickupPage() {
   const win = usePickupWindow();
   const choices = useMyChoices(win.data);
   const tomorrow = choices.data?.find((c) => c.service_date === win.data?.service_date);
-  const canBook = Boolean(win.data?.open) && choices.isSuccess && !tomorrow;
+  // a booking stays editable while booking is open
+  const [editing, setEditing] = useState(false);
+  const canBook = Boolean(win.data?.open) && choices.isSuccess && (!tomorrow || editing);
   const options = usePickupOptions(canBook);
   const defaults = useBookingDefaults(me?.student?.id, win.data?.service_date, canBook);
   // null = not touched yet: the suggestion from the weekly schedule shows until the student picks
@@ -502,8 +513,9 @@ export function PickupPage() {
         }),
       ),
     onSuccess: () => {
-      toast.success(p.saved);
+      toast.success(tomorrow ? p.savedEdit : p.saved);
       setConfirming(false);
+      setEditing(false);
       void qc.invalidateQueries({ queryKey: ['my-pickups'] });
       void qc.invalidateQueries({ queryKey: ['my-patients'] });
     },
@@ -519,6 +531,22 @@ export function PickupPage() {
   if (win.isLoading || !win.data || choices.isLoading) return <ListSkeleton rows={3} />;
   const w = win.data;
   const today = choices.data?.find((c) => c.service_date === w.today);
+
+  /** Opens the form filled with the saved booking. */
+  const startEditing = () => {
+    if (!tomorrow) return;
+    const saved = myPatients.data ?? [];
+    setSlot(hhmm(tomorrow.outbound_time));
+    setOption(tomorrow.outbound_route_id && tomorrow.stop_id ? optionKey({ route_id: tomorrow.outbound_route_id, stop_id: tomorrow.stop_id }) : '');
+    setWithPatients(saved.length > 0);
+    setPatients(
+      saved.length
+        ? saved.map((x) => ({ full_name: x.full_name, phone: x.phone, outbound_time: hhmm(x.outbound_time), option: x.option ?? '' }))
+        : [emptyPatient()],
+    );
+    setError(null);
+    setEditing(true);
+  };
 
   const submit = () => {
     if (!slot || !chosen) {
@@ -538,7 +566,7 @@ export function PickupPage() {
     <div className="space-y-4">
       <PageHeader title={p.title} subtitle={p.forDate(dayLabel(w.service_date))} />
 
-      {tomorrow ? (
+      {tomorrow && !editing ? (
         <Card className="space-y-3" data-testid="pickup-locked">
           <CardTitle className="flex items-center gap-2">
             <Lock className="h-5 w-5 text-brand-ink" aria-hidden />
@@ -546,7 +574,17 @@ export function PickupPage() {
           </CardTitle>
           <ChoiceSummary booking={toBooking(tomorrow)} />
           <PatientsSummary patients={myPatients.data ?? []} testId="pickup-locked-patients" />
-          <p className="text-xs text-muted">{p.lockedNote}</p>
+          {w.open ? (
+            <>
+              <p className="text-xs text-muted">{p.editUntil(formatClock(w.closes_at))}</p>
+              <Button variant="secondary" className="w-full" onClick={startEditing} disabled={myPatients.isLoading} data-testid="pickup-edit">
+                <Pencil className="h-4 w-4" aria-hidden />
+                {p.edit}
+              </Button>
+            </>
+          ) : (
+            <p className="text-xs text-muted">{p.lockedNote}</p>
+          )}
         </Card>
       ) : w.open ? (
         <Card className="space-y-5" data-testid="pickup-open">
@@ -626,8 +664,13 @@ export function PickupPage() {
             </p>
           ) : null}
           <Button variant="primary" size="lg" className="w-full" disabled={save.isPending} onClick={submit} data-testid="pickup-save">
-            {p.save}
+            {editing ? p.saveEdit : p.save}
           </Button>
+          {editing ? (
+            <Button variant="ghost" className="w-full" onClick={() => setEditing(false)} disabled={save.isPending} data-testid="pickup-edit-cancel">
+              {p.cancelEdit}
+            </Button>
+          ) : null}
         </Card>
       ) : (
         <Card className="flex flex-col items-center gap-3 py-8 text-center" data-testid="pickup-closed">
@@ -648,8 +691,8 @@ export function PickupPage() {
       <ConfirmDialog
         open={confirming}
         onOpenChange={setConfirming}
-        title={p.confirmTitle}
-        body={p.confirmBody}
+        title={editing ? p.confirmEditTitle : p.confirmTitle}
+        body={editing ? p.confirmEditBody(formatClock(w.closes_at)) : p.confirmBody(formatClock(w.closes_at))}
         busy={save.isPending}
         onConfirm={() => save.mutate()}
       >
