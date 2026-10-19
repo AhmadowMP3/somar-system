@@ -108,6 +108,12 @@ describe('bookings by line', () => {
     expect((await other.rpc('pickup_passengers', { p_university_id: fx.universityId, p_date: '2026-10-06' })).error?.message).toBe('FORBIDDEN');
   });
 
+  it('accepts a phone typed with Arabic digits and keeps it in Western digits', async () => {
+    expect((await book(dentist, [patient({ phone: '٠٩٤٤ ١٢٣ ۴۵۶' })], lines.line2)).error).toBeNull();
+    const { data } = await dentist.from('pickup_patients').select('phone');
+    expect(data).toEqual([{ phone: '0944123456' }]);
+  });
+
   it('a changed booking replaces the patients as a whole', async () => {
     expect((await book(dentist, [patient({ full_name: 'مريض بديل' })], lines.line2)).error).toBeNull();
     const { data } = await dentist.from('pickup_patients').select('seq, full_name');

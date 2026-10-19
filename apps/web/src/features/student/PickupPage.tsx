@@ -2,7 +2,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Bus, ChevronLeft, Clock, Lock, MapPinned, Pencil, Search, UserRound } from 'lucide-react';
 import { useId, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { foldArabic, formatClock, formatDate, OUTBOUND_SLOTS } from '@somar/shared';
+import { foldArabic, formatClock, formatDate, normalizeDigits, OUTBOUND_SLOTS } from '@somar/shared';
 import { useAuth } from '@/app/auth';
 import { ConfirmDialog, useToast } from '@/components/ui/overlay';
 import { Button, Card, CardTitle, Field, Input, Select } from '@/components/ui/primitives';
@@ -62,8 +62,10 @@ type PatientRow = {
 
 const MAX_PATIENTS = 5;
 const emptyPatient = (): PatientDraft => ({ full_name: '', phone: '', outbound_time: '', option: '' });
+/** Arabic phone keyboards type ٠٩٤٤…: the number is kept in Western digits. */
+const cleanPhone = (phone: string) => normalizeDigits(phone).replace(/[\s\-().]/g, '');
 const patientComplete = (x: PatientDraft) =>
-  x.full_name.trim().length >= 2 && /^\+?[0-9]{7,15}$/.test(x.phone.replace(/[\s\-().]/g, '')) && Boolean(x.outbound_time && x.option);
+  x.full_name.trim().length >= 2 && /^\+?[0-9]{7,15}$/.test(cleanPhone(x.phone)) && Boolean(x.outbound_time && x.option);
 
 /** An option is picked by line and stop together: the same stop can be on two lines of one trip. */
 const optionKey = (o: Pick<Option, 'route_id' | 'stop_id'>) => `${o.route_id}|${o.stop_id}`;
@@ -429,7 +431,7 @@ function PatientForm({
             dir="ltr"
             className="text-start"
             value={value.phone}
-            onChange={(e) => set({ phone: e.target.value })}
+            onChange={(e) => set({ phone: normalizeDigits(e.target.value) })}
             data-testid={`pickup-patient-${n}-phone`}
           />
         </Field>
@@ -506,7 +508,7 @@ export function PickupPage() {
           p_stop_id: chosen?.stop_id,
           p_patients: sentPatients.map((x) => ({
             full_name: x.full_name.trim(),
-            phone: x.phone.trim(),
+            phone: cleanPhone(x.phone),
             outbound_time: x.outbound_time,
             ...splitKey(x.option),
           })),
@@ -702,7 +704,7 @@ export function PickupPage() {
             patients={sentPatients.map((x, i) => ({
               seq: i + 1,
               full_name: x.full_name.trim(),
-              phone: x.phone.trim(),
+              phone: cleanPhone(x.phone),
               ...optionBooking(x.outbound_time, optionOf(x.outbound_time, x.option)),
             }))}
             testId="pickup-confirm-patients"
