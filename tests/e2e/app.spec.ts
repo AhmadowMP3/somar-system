@@ -475,13 +475,20 @@ test('14. admin schedules a weekly notification for several days at a set time, 
   await expect(list).toContainText('متوقف');
 });
 
-test('15. seat booking: window from the settings, one locked booking of outbound time + stop, return time + drop-off, admin sees it', async ({ page }) => {
+test('15. seat booking: window from the settings, one locked outbound seat on a line of the chosen trip with the bus time, admin sees it', async ({ page }) => {
   const st = await createE2EStudent(uni, { subscribe: true, photo: true, ready: true });
+  const { data: lib } = await service.from('stops').select('id, name').eq('university_id', uni.id);
+  const stopId = (name: string) => lib?.find((x) => x.name === name)?.id;
+  // the 10:00 trip: one line through both stops, with the bus time at each
   const { data: ret } = await service
     .from('routes')
-    .insert({ university_id: uni.id, name: 'عودة الواجهة', direction: 'return', departure_time: '14:00' })
+    .insert({ university_id: uni.id, name: 'خط الواجهة — الرحلة الثانية', direction: 'outbound', departure_time: '08:50' })
     .select('id')
     .single();
+  await service.from('route_stops').insert([
+    { route_id: ret?.id, seq: 1, stop_id: stopId('الرجاء'), departure_time: '08:50' },
+    { route_id: ret?.id, seq: 2, stop_id: stopId('ساحة جامعة'), departure_time: '09:15' },
+  ]);
   await service.from('settings').update({ pickup_open_time: '18:30', pickup_close_time: '22:00' }).eq('university_id', uni.id);
   try {
     await freezeClock('2026-10-05 18:00');
@@ -496,22 +503,20 @@ test('15. seat booking: window from the settings, one locked booking of outbound
     await expect(page.getByTestId('pickup-open')).toBeVisible();
     await expect(page.getByText('ليوم الثلاثاء', { exact: false })).toBeVisible();
     await page.getByTestId('pickup-save').click();
-    await expect(page.getByRole('alert')).toHaveText('اختر وقت الذهاب ومكان الصعود ووقت العودة ومكان النزول');
+    await expect(page.getByRole('alert')).toHaveText('اختر وقت الذهاب ونقطة الصعود');
+    // no line of the 12:00 trip runs here
     await page.getByTestId('pickup-outbound-times').getByRole('radio', { name: '12:00 م' }).click();
-    // only returns after the outbound can be picked
-    await expect(page.getByTestId('pickup-return-times').getByRole('radio', { name: '11:30 ص' })).toBeDisabled();
+    await expect(page.getByText('لا توجد خطوط مفعّلة لهذا الوقت غداً', { exact: false })).toBeVisible();
     await page.getByTestId('pickup-outbound-times').getByRole('radio', { name: '10:00 ص' }).click();
     await page.getByTestId('pickup-stop-search').fill('ساحة');
-    await page.getByTestId('pickup-stop-options').getByText('ساحة جامعة', { exact: true }).click();
-    await page.getByTestId('pickup-return-times').getByRole('radio', { name: '2:00 م' }).click();
-    await page.getByTestId('pickup-return-stop-search').fill('رجاء');
-    await page.getByTestId('pickup-return-stop-options').getByText('الرجاء', { exact: true }).click();
+    await page.getByTestId('pickup-stop-options').getByRole('radio', { name: /ساحة جامعة/ }).click();
+    await expect(page.getByTestId('pickup-arrival')).toContainText('يصل الباص إلى «ساحة جامعة» الساعة 9:15 ص');
     await page.getByTestId('pickup-save').click();
     await expect(page.getByTestId('pickup-confirm-summary')).toContainText('10:00 ص — ساحة جامعة');
     await page.getByRole('dialog').getByRole('button', { name: 'تأكيد' }).click();
     const locked = page.getByTestId('pickup-locked');
     await expect(locked.getByTestId('pickup-current')).toHaveText('10:00 ص — ساحة جامعة');
-    await expect(locked.getByTestId('pickup-current-return')).toHaveText('2:00 م — الرجاء');
+    await expect(locked.getByTestId('pickup-current-line')).toHaveText('خط الواجهة — الرحلة الثانية');
     await expect(page.getByTestId('pickup-save')).toHaveCount(0);
 
     await page.context().clearCookies();
@@ -521,18 +526,18 @@ test('15. seat booking: window from the settings, one locked booking of outbound
     await pickUniversity(page, uni.id);
     await page.goto('/admin/pickups');
     await expect(page.getByTestId('pickup-summary')).toContainText('حجز 1 من أصل');
-    // grouped by line; the test university's only line leaves at 7:00, so a 10:00 seat has no line
+    // grouped by trip and line: the seat is on the line the student picked
     const outbound = page.getByTestId('pickup-lines-outbound');
-    await expect(outbound.getByTestId('pickup-line')).toContainText('خارج الخطوط');
+    await expect(outbound.getByTestId('pickup-trip')).toContainText('الرحلة الثانية — ذهاب 10:00 ص');
+    await expect(outbound.getByTestId('pickup-line')).toContainText('خط الواجهة — الرحلة الثانية');
     await outbound.getByTestId('pickup-stop-row').filter({ hasText: 'ساحة جامعة' }).click();
     await expect(outbound).toContainText(st.transportNumber);
     await expect(outbound).toContainText('حجز 10:00 ص');
-    const returns = page.getByTestId('pickup-lines-return');
-    await expect(returns).toContainText('الرجاء');
+    await expect(page.getByTestId('pickup-lines-return')).toHaveCount(0);
     const bookings = page.getByTestId('pickup-bookings');
     await page.getByTestId('pickup-bookings-search').fill(st.transportNumber);
     await expect(bookings).toContainText('ساحة جامعة');
-    await expect(bookings).toContainText('2:00 م');
+    await expect(bookings).toContainText('خط الواجهة — الرحلة الثانية');
 
     // the window times are edited in the settings
     await page.goto('/admin/settings');

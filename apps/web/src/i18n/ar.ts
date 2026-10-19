@@ -322,7 +322,7 @@ export const t = {
 
   pickup: {
     title: 'احجز مقعدك غداً',
-    intro: 'اختر وقت الذهاب ومكان صعودك، ثم وقت العودة ومكان نزولك.',
+    intro: 'اختر وقت الذهاب، ثم نقطة صعودك من خطوط ذلك الوقت.',
     forDate: (d: string) => `ليوم ${d}`,
     opensAt: (from: string, to: string) => `يفتح الحجز كل يوم من الساعة ${from} حتى الساعة ${to}.`,
     closedTitle: 'الحجز لم يفتح بعد',
@@ -346,8 +346,8 @@ export const t = {
     saved: 'تم حجز مقعدك لغد',
     lockedTitle: 'حجزك لغد',
     lockedNote: 'تم تثبيت حجزك ولا يمكن تغييره.',
-    missing: 'اختر وقت الذهاب ومكان الصعود ووقت العودة ومكان النزول',
-    homeOpen: 'احجز مقعدك لغد: الأوقات وأماكن الصعود والنزول',
+    missing: 'اختر وقت الذهاب ونقطة الصعود',
+    homeOpen: 'احجز مقعدك لغد: وقت الذهاب ونقطة الصعود',
     homeChosen: (time: string, stop: string) => `حجزك غداً: ذهاب ${time} — ${stop}`,
     at: (time: string, stop: string) => `${time} — ${stop}`,
     unknown: '—',
@@ -356,7 +356,13 @@ export const t = {
     patientTitle: (n: number) => `مريض رقم ${n}`,
     patientName: 'اسم المريض',
     patientPhone: 'رقم هاتف المريض',
-    patientsMissing: (n: number) => `أكمل بيانات مريض رقم ${n}: الاسم والهاتف والأوقات والأماكن`,
+    patientsMissing: (n: number) => `أكمل بيانات مريض رقم ${n}: الاسم والهاتف ووقت الذهاب ونقطة الصعود`,
+    line: 'الخط',
+    departs: (time: string) => `ينطلق ${time}`,
+    stopHint: 'النقاط مرتبة حسب الخطوط التي تنطلق في هذا الوقت، ومع كل نقطة موعد وصول الباص إليها.',
+    noLines: 'لا توجد خطوط مفعّلة لهذا الوقت غداً. اختر وقتاً آخر.',
+    arrivalNote: (stop: string, time: string, line: string) =>
+      `يصل الباص إلى «${stop}» الساعة ${time}${line ? ` (${line})` : ''}. كن في النقطة قبل الموعد.`,
     patientsSummary: 'المرضى',
   },
 
@@ -624,7 +630,7 @@ export const t = {
       },
       patientsCount: (n: number) => `ومعهم ${n} مريض`,
       byLines: 'الحجوزات حسب الخطوط',
-      linesHint: 'يحدد النظام خط كل حجز من وقته ونقطة الوقوف: الذهاب على الرحلة التي تمر بالنقطة قبل الوقت المحجوز، والعودة على خط العودة الذي يمر بها.',
+      linesHint: 'كل حجز على الخط الذي اختاره الطالب، ومع كل نقطة موعد وصول الباص إليها.',
       outboundLines: 'خطوط الذهاب',
       returnLines: 'خطوط العودة',
       noLine: 'خارج الخطوط',

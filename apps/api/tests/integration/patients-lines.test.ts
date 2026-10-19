@@ -8,52 +8,41 @@ let dentist: SupabaseClient;
 let other: SupabaseClient;
 let dentistryId: string;
 const stops = {} as Record<'kura' | 'shifa' | 'salam', string>;
+const lines = {} as Record<'line2' | 'line4' | 'line4b', string>;
 
 const patient = (over: Record<string, unknown> = {}) => ({
   full_name: 'مريض تجربة',
   phone: '0944 123 456',
   outbound_time: '10:00',
+  route_id: lines.line4b,
   stop_id: stops.kura,
-  return_time: '14:00',
-  return_stop_id: stops.shifa,
   ...over,
 });
-const book = (client: SupabaseClient, patients: unknown[] = [], outbound = '08:00', stop = stops.kura) =>
-  client.rpc('choose_my_pickup', {
-    p_outbound_time: outbound,
-    p_stop_id: stop,
-    p_return_time: '14:00',
-    p_return_stop_id: stops.shifa,
-    p_patients: patients,
-  });
+const book = (client: SupabaseClient, patients: unknown[] = [], route = lines.line4) =>
+  client.rpc('choose_my_pickup', { p_outbound_time: '08:00', p_route_id: route, p_stop_id: stops.kura, p_patients: patients });
 
 beforeAll(async () => {
   fx = await createUniversity();
   staff = (await createStaff(fx, 'university_supervisor')).client;
-  const { data: college } = await service
-    .from('colleges')
-    .insert({ university_id: fx.universityId, name: 'طب الأسنان' })
-    .select('id, allows_patients')
-    .single();
+  const { data: college } = await service.from('colleges').insert({ university_id: fx.universityId, name: 'طب الأسنان' }).select('id').single();
   dentistryId = college?.id as string;
   for (const [key, name] of [['kura', 'دوار الكرة'], ['shifa', 'دوار الشفاء'], ['salam', 'ساحة الجامعة']] as const) {
     const { data } = await service.from('stops').insert({ university_id: fx.universityId, name }).select('id').single();
     stops[key] = data?.id as string;
   }
-  // line 2 passes دوار الكرة first, line 4 passes it later: both leave at 7:15 (for 8:00) and 8:50 (for 10:00)
-  const route = async (name: string, direction: string, departure: string | null, stopTimes: [string, string | null][]) => {
+  const route = async (name: string, departure: string, stopTimes: [string, string][]) => {
     const { data } = await service
       .from('routes')
-      .insert({ university_id: fx.universityId, name, direction, departure_time: departure })
+      .insert({ university_id: fx.universityId, name, direction: 'outbound', departure_time: departure })
       .select('id')
       .single();
     await service.from('route_stops').insert(stopTimes.map(([stop, time], i) => ({ route_id: data?.id, seq: i + 1, stop_id: stop, departure_time: time })));
     return data?.id as string;
   };
-  await route('الخط 2 — الرحلة الأولى', 'outbound', '07:15', [[stops.kura, '07:15'], [stops.salam, '07:30']]);
-  await route('الخط 4 — الرحلة الأولى', 'outbound', '07:15', [[stops.salam, '07:20'], [stops.kura, '07:40']]);
-  await route('الخط 4 — الرحلة الثانية', 'outbound', '08:50', [[stops.salam, '08:55'], [stops.kura, '09:15']]);
-  await route('العودة — القسم الأول', 'return', null, [[stops.salam, null], [stops.shifa, null]]);
+  // دوار الكرة is on two lines of the first trip: the student picks the bus
+  lines.line2 = await route('الخط 2 — الرحلة الأولى', '07:15', [[stops.kura, '07:15'], [stops.salam, '07:30']]);
+  lines.line4 = await route('الخط 4 — الرحلة الأولى', '07:15', [[stops.salam, '07:20'], [stops.kura, '07:40']]);
+  lines.line4b = await route('الخط 4 — الرحلة الثانية', '08:50', [[stops.salam, '08:55'], [stops.kura, '09:15']]);
 
   const d = await createStudent(fx);
   await service.from('students').update({ college_id: dentistryId }).eq('id', d.id);
@@ -71,10 +60,8 @@ afterAll(async () => {
 });
 
 describe('patients', () => {
-  it('dentistry starts allowed; other colleges may not book patients', async () => {
-    const { data } = await service.from('colleges').select('allows_patients').eq('id', dentistryId).single();
-    // the column default is false; the first-run name match only covers colleges that existed then
-    expect(typeof data?.allows_patients).toBe('boolean');
+  it('only students of a college with the switch on may book patients', async () => {
+    expect((await book(dentist, [patient()])).error?.message).toBe('PATIENTS_NOT_ALLOWED');
     await service.from('colleges').update({ allows_patients: true }).eq('id', dentistryId);
     expect((await book(other, [patient()])).error?.message).toBe('PATIENTS_NOT_ALLOWED');
   });
@@ -83,55 +70,41 @@ describe('patients', () => {
     expect((await book(dentist, [patient({ full_name: ' ' })])).error?.message).toBe('PATIENT_NAME_INVALID');
     expect((await book(dentist, [patient({ phone: '12' })])).error?.message).toBe('PATIENT_PHONE_INVALID');
     expect((await book(dentist, [patient({ outbound_time: '09:00' })])).error?.message).toBe('OUTBOUND_TIME_INVALID');
-    expect((await book(dentist, [patient({ return_time: '11:30', outbound_time: '12:00' })])).error?.message).toBe('RETURN_TIME_INVALID');
+    // the 10:00 patient cannot ride a line of the 8:00 trip
+    expect((await book(dentist, [patient({ route_id: lines.line2 })])).error?.message).toBe('STOP_INVALID');
     expect((await book(dentist, Array.from({ length: 6 }, () => patient()))).error?.message).toBe('PATIENTS_INVALID');
     const { count } = await service.from('pickup_choices').select('student_id', { count: 'exact', head: true }).eq('university_id', fx.universityId);
     expect(count).toBe(0);
   });
 
-  it('books the student with two patients, numbered, phone cleaned; the student reads them back', async () => {
-    const res = await book(dentist, [patient(), patient({ full_name: 'مريض ثان', outbound_time: '08:00', stop_id: stops.salam })]);
+  it('books the student with two patients, each on its own line, phone cleaned; the student reads them back', async () => {
+    const res = await book(dentist, [patient(), patient({ full_name: 'مريض ثان', outbound_time: '08:00', route_id: lines.line2, stop_id: stops.salam })]);
     expect(res.error).toBeNull();
-    const { data } = await dentist.from('pickup_patients').select('seq, full_name, phone').order('seq');
+    const { data } = await dentist.from('pickup_patients').select('seq, full_name, phone, outbound_route_name, outbound_stop_time').order('seq');
     expect(data).toEqual([
-      { seq: 1, full_name: 'مريض تجربة', phone: '0944123456' },
-      { seq: 2, full_name: 'مريض ثان', phone: '0944123456' },
+      { seq: 1, full_name: 'مريض تجربة', phone: '0944123456', outbound_route_name: 'الخط 4 — الرحلة الثانية', outbound_stop_time: '09:15:00' },
+      { seq: 2, full_name: 'مريض ثان', phone: '0944123456', outbound_route_name: 'الخط 2 — الرحلة الأولى', outbound_stop_time: '07:30:00' },
     ]);
     // other students never see them
     expect((await other.from('pickup_patients').select('id')).data).toEqual([]);
-    await book(other);
+    expect((await book(other, [], lines.line2)).error).toBeNull();
   });
 });
 
 describe('bookings by line', () => {
-  it('places every seat on the line its time and stop give, with who it is for', async () => {
+  it('lists every seat on its booked line with who it is for, outbound only', async () => {
     const { data, error } = await staff.rpc('pickup_passengers', { p_university_id: fx.universityId, p_date: '2026-10-06' });
     expect(error).toBeNull();
-    const rows = data as { passenger_type: string; full_name: string; booked_by_name: string | null; direction: string; slot: string; route_name: string | null; stop_name: string }[];
-    const leg = (name: string, direction: string) => rows.find((r) => r.full_name === name && r.direction === direction);
-
-    // 8:00 at دوار الكرة: line 4 reaches it at 7:40, closer to 8:00 than line 2's 7:15
-    const students = rows.filter((r) => r.passenger_type === 'student' && r.direction === 'outbound');
-    expect(students).toHaveLength(2);
-    expect(students.every((r) => r.route_name === 'الخط 4 — الرحلة الأولى')).toBe(true);
-    // 10:00 → the 8:50 trip
-    expect(leg('مريض تجربة', 'outbound')).toMatchObject({ passenger_type: 'patient', route_name: 'الخط 4 — الرحلة الثانية', stop_name: 'دوار الكرة' });
-    expect(leg('مريض تجربة', 'outbound')?.booked_by_name).toBe('طالب اختبار ثلاثي');
-    // 8:00 at ساحة الجامعة: line 4 at 7:20, line 2 at 7:30 → line 2 is closer
-    expect(leg('مريض ثان', 'outbound')?.route_name).toBe('الخط 2 — الرحلة الأولى');
-    // return lines without a time serve every return slot
-    expect(rows.filter((r) => r.direction === 'return').every((r) => r.route_name === 'العودة — القسم الأول')).toBe(true);
-    expect(rows).toHaveLength(8);
+    const rows = data as { passenger_type: string; full_name: string; booked_by_name: string | null; direction: string; route_name: string | null; stop_time: string }[];
+    expect(rows).toHaveLength(4);
+    expect(rows.every((r) => r.direction === 'outbound')).toBe(true);
+    // the same stop, two students, two buses: each kept the line they picked
+    expect(rows.filter((r) => r.passenger_type === 'student').map((r) => [r.route_name, r.stop_time]).sort()).toEqual([
+      ['الخط 2 — الرحلة الأولى', '07:15:00'],
+      ['الخط 4 — الرحلة الأولى', '07:40:00'],
+    ]);
+    expect(rows.find((r) => r.full_name === 'مريض تجربة')).toMatchObject({ passenger_type: 'patient', route_name: 'الخط 4 — الرحلة الثانية', booked_by_name: 'طالب اختبار ثلاثي' });
 
     expect((await other.rpc('pickup_passengers', { p_university_id: fx.universityId, p_date: '2026-10-06' })).error?.message).toBe('FORBIDDEN');
-  });
-
-  it('a stop no line serves at that time shows without a line', async () => {
-    await service.from('pickup_patients').update({ outbound_time: '12:00' }).eq('full_name', 'مريض تجربة');
-    const { data } = await staff.rpc('pickup_passengers', { p_university_id: fx.universityId, p_date: '2026-10-06' });
-    const row = (data as { full_name: string; direction: string; route_name: string | null }[]).find(
-      (r) => r.full_name === 'مريض تجربة' && r.direction === 'outbound',
-    );
-    expect(row?.route_name).toBeNull();
   });
 });

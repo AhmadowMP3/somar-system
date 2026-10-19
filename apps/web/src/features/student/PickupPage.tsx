@@ -1,10 +1,9 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { ChevronLeft, Clock, Lock, MapPinned, UserRound } from 'lucide-react';
-import { useId, useState } from 'react';
+import { Bus, ChevronLeft, Clock, Lock, MapPinned, Search, UserRound } from 'lucide-react';
+import { useId, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { formatClock, formatDate, OUTBOUND_SLOTS, RETURN_SLOTS } from '@somar/shared';
+import { foldArabic, formatClock, formatDate, OUTBOUND_SLOTS } from '@somar/shared';
 import { useAuth } from '@/app/auth';
-import { SearchPicker } from '@/components/SearchPicker';
 import { ConfirmDialog, useToast } from '@/components/ui/overlay';
 import { Button, Card, CardTitle, Field, Input, Select } from '@/components/ui/primitives';
 import { ListSkeleton, PageHeader } from '@/components/ui/states';
@@ -12,7 +11,6 @@ import { t } from '@/i18n/ar';
 import { errorMessage } from '@/lib/errors';
 import { supabase, unwrap } from '@/lib/supabase';
 import { cn } from '@/lib/utils';
-import { useStopLibrary } from './StudentPages';
 
 type PickupWindow = {
   open: boolean;
@@ -22,45 +20,65 @@ type PickupWindow = {
   today: string;
   service_date: string;
 };
+/** One bookable stop: a stop on a line of a trip (pickup_options), with the bus's time there. */
+type Option = {
+  slot: string;
+  route_id: string;
+  route_name: string;
+  route_departure: string | null;
+  stop_id: string;
+  stop_name: string;
+  stop_seq: number;
+  stop_time: string;
+};
 type Choice = {
   service_date: string;
   outbound_time: string | null;
-  return_time: string | null;
-  /** Names saved with the booking: the stop may have been deleted since. */
+  /** Names and time saved with the booking: the stop or line may have changed since. */
   stop_name: string | null;
-  return_stop_name: string | null;
+  outbound_route_name: string | null;
+  outbound_stop_time: string | null;
   stops: { name: string } | null;
-  return_stop: { name: string } | null;
 };
-/** What a summary shows: a saved booking, or the one about to be confirmed. */
-type Booking = { outbound_time: string | null; stop: string | null; return_time: string | null; return_stop: string | null };
+/** What a summary shows: a saved seat, or the one about to be confirmed. */
+type Booking = { outbound_time: string | null; stop: string | null; line: string | null; stop_time: string | null };
 /** A patient's seat as the student fills it in (dentistry students bring patients). */
-type PatientDraft = { full_name: string; phone: string; outbound_time: string; stop_id: string; return_time: string; return_stop_id: string };
+type PatientDraft = { full_name: string; phone: string; outbound_time: string; option: string };
 type SavedPatient = Booking & { seq: number; full_name: string; phone: string };
 type PatientRow = {
   seq: number;
   full_name: string;
   phone: string;
   outbound_time: string;
-  return_time: string;
   stop_name: string | null;
-  return_stop_name: string | null;
+  outbound_route_name: string | null;
+  outbound_stop_time: string | null;
   stops: { name: string } | null;
-  return_stop: { name: string } | null;
 };
 
 const MAX_PATIENTS = 5;
-const emptyPatient = (): PatientDraft => ({ full_name: '', phone: '', outbound_time: '', stop_id: '', return_time: '', return_stop_id: '' });
+const emptyPatient = (): PatientDraft => ({ full_name: '', phone: '', outbound_time: '', option: '' });
 const patientComplete = (x: PatientDraft) =>
-  x.full_name.trim().length >= 2 &&
-  /^\+?[0-9]{7,15}$/.test(x.phone.replace(/[\s\-().]/g, '')) &&
-  Boolean(x.outbound_time && x.stop_id && x.return_time && x.return_stop_id);
+  x.full_name.trim().length >= 2 && /^\+?[0-9]{7,15}$/.test(x.phone.replace(/[\s\-().]/g, '')) && Boolean(x.outbound_time && x.option);
+
+/** An option is picked by line and stop together: the same stop can be on two lines of one trip. */
+const optionKey = (o: Pick<Option, 'route_id' | 'stop_id'>) => `${o.route_id}|${o.stop_id}`;
+const splitKey = (key: string) => {
+  const [route_id = '', stop_id = ''] = key.split('|');
+  return { route_id, stop_id };
+};
 
 const toBooking = (c: Choice): Booking => ({
   outbound_time: c.outbound_time,
   stop: c.stops?.name ?? c.stop_name,
-  return_time: c.return_time,
-  return_stop: c.return_stop?.name ?? c.return_stop_name,
+  line: c.outbound_route_name,
+  stop_time: c.outbound_stop_time,
+});
+const optionBooking = (slot: string, o: Option | undefined): Booking => ({
+  outbound_time: slot || null,
+  stop: o?.stop_name ?? null,
+  line: o?.route_name ?? null,
+  stop_time: o?.stop_time ?? null,
 });
 
 const hhmm = (time: string | null | undefined) => (time ? time.slice(0, 5) : '');
@@ -88,11 +106,36 @@ function useMyChoices(win: PickupWindow | undefined) {
       unwrap(
         await supabase
           .from('pickup_choices')
-          .select(
-            'service_date, outbound_time, return_time, stop_name, return_stop_name, stops!pickup_choices_stop_id_fkey(name), return_stop:stops!pickup_choices_return_stop_id_fkey(name)',
-          )
+          .select('service_date, outbound_time, stop_name, outbound_route_name, outbound_stop_time, stops!pickup_choices_stop_id_fkey(name)')
           .in('service_date', [win?.today as string, win?.service_date as string]),
       ) as unknown as Choice[],
+  });
+}
+
+/** Tomorrow's lines and stops for each outbound time. */
+function usePickupOptions(enabled: boolean) {
+  return useQuery({
+    queryKey: ['pickup-options'],
+    enabled,
+    queryFn: async () => (unwrap(await supabase.rpc('pickup_options')) as Option[]).map((o) => ({ ...o, slot: hhmm(o.slot) })),
+  });
+}
+
+/** Suggested booking: the student's weekly outbound time for that weekday and their nearest stop. */
+function useBookingDefaults(studentId: string | undefined, serviceDate: string | undefined, enabled: boolean) {
+  return useQuery({
+    queryKey: ['pickup-defaults', studentId, serviceDate],
+    enabled: enabled && Boolean(studentId && serviceDate),
+    queryFn: async () => {
+      const dow = new Date(`${serviceDate}T00:00:00Z`).getUTCDay() || 7;
+      const [student, schedule] = await Promise.all([
+        supabase.from('students').select('home_stop_id').eq('id', studentId as string).maybeSingle(),
+        supabase.from('student_schedule').select('outbound_time').eq('student_id', studentId as string).eq('dow', dow).maybeSingle(),
+      ]);
+      const home = unwrap(student) as { home_stop_id: string | null } | null;
+      const day = unwrap(schedule) as { outbound_time: string } | null;
+      return { stopId: home?.home_stop_id ?? '', outbound: hhmm(day?.outbound_time) };
+    },
   });
 }
 
@@ -119,9 +162,7 @@ function useMyPatients(serviceDate: string | undefined) {
         unwrap(
           await supabase
             .from('pickup_patients')
-            .select(
-              'seq, full_name, phone, outbound_time, return_time, stop_name, return_stop_name, stops!pickup_patients_stop_id_fkey(name), return_stop:stops!pickup_patients_return_stop_id_fkey(name)',
-            )
+            .select('seq, full_name, phone, outbound_time, stop_name, outbound_route_name, outbound_stop_time, stops!pickup_patients_stop_id_fkey(name)')
             .eq('service_date', serviceDate as string)
             .order('seq'),
         ) as unknown as PatientRow[]
@@ -132,33 +173,10 @@ function useMyPatients(serviceDate: string | undefined) {
           phone: r.phone,
           outbound_time: r.outbound_time,
           stop: r.stops?.name ?? r.stop_name,
-          return_time: r.return_time,
-          return_stop: r.return_stop?.name ?? r.return_stop_name,
+          line: r.outbound_route_name,
+          stop_time: r.outbound_stop_time,
         }),
       ),
-  });
-}
-
-/** Suggested booking: the student's weekly times for that weekday and their nearest stop. */
-function useBookingDefaults(studentId: string | undefined, serviceDate: string | undefined, enabled: boolean) {
-  return useQuery({
-    queryKey: ['pickup-defaults', studentId, serviceDate],
-    enabled: enabled && Boolean(studentId && serviceDate),
-    queryFn: async () => {
-      const dow = new Date(`${serviceDate}T00:00:00Z`).getUTCDay() || 7;
-      const [student, schedule] = await Promise.all([
-        supabase.from('students').select('home_stop_id').eq('id', studentId as string).maybeSingle(),
-        supabase
-          .from('student_schedule')
-          .select('outbound_time, return_time')
-          .eq('student_id', studentId as string)
-          .eq('dow', dow)
-          .maybeSingle(),
-      ]);
-      const home = unwrap(student) as { home_stop_id: string | null } | null;
-      const day = unwrap(schedule) as { outbound_time: string; return_time: string } | null;
-      return { stopId: home?.home_stop_id ?? '', outbound: hhmm(day?.outbound_time), ret: hhmm(day?.return_time) };
-    },
   });
 }
 
@@ -197,26 +215,39 @@ export function PickupHomeCard() {
   );
 }
 
+/** «الباص يصل إلى دوار الكرة الساعة 7:40 ص (الخط 4)» — the reason the line's stop times are asked for. */
+function ArrivalNote({ booking, testId }: { booking: Booking; testId?: string }) {
+  if (!booking.stop || !booking.stop_time) return null;
+  return (
+    <p className="flex items-start gap-2 rounded-lg bg-brand/10 p-3 text-sm font-semibold" data-testid={testId}>
+      <Clock className="mt-0.5 h-4 w-4 shrink-0 text-brand-ink" aria-hidden />
+      <span className="num">{t.pickup.arrivalNote(booking.stop, formatClock(booking.stop_time), booking.line ?? '')}</span>
+    </p>
+  );
+}
+
 function ChoiceSummary({ booking, testId }: { booking: Booking; testId?: string }) {
   const p = t.pickup;
-  const line = (time: string | null, stop: string | null) => p.at(formatClock(time) || p.unknown, stop ?? p.unknown);
   return (
-    <dl className="grid gap-2 text-sm" data-testid={testId}>
-      <div className="flex flex-wrap justify-between gap-2 rounded-lg bg-surface p-3">
-        <dt className="text-muted">{p.outbound}</dt>
-        <dd className="num font-bold" data-testid="pickup-current">
-          {line(booking.outbound_time, booking.stop)}
-        </dd>
-      </div>
-      {booking.return_time ? (
+    <div className="space-y-2" data-testid={testId}>
+      <dl className="grid gap-2 text-sm">
         <div className="flex flex-wrap justify-between gap-2 rounded-lg bg-surface p-3">
-          <dt className="text-muted">{p.return}</dt>
-          <dd className="num font-bold" data-testid="pickup-current-return">
-            {line(booking.return_time, booking.return_stop)}
+          <dt className="text-muted">{p.outbound}</dt>
+          <dd className="num font-bold" data-testid="pickup-current">
+            {p.at(formatClock(booking.outbound_time) || p.unknown, booking.stop ?? p.unknown)}
           </dd>
         </div>
-      ) : null}
-    </dl>
+        {booking.line ? (
+          <div className="flex flex-wrap justify-between gap-2 rounded-lg bg-surface p-3">
+            <dt className="text-muted">{p.line}</dt>
+            <dd className="font-bold" data-testid="pickup-current-line">
+              {booking.line}
+            </dd>
+          </div>
+        ) : null}
+      </dl>
+      <ArrivalNote booking={booking} />
+    </div>
   );
 }
 
@@ -244,34 +275,19 @@ function PatientsSummary({ patients, testId }: { patients: SavedPatient[]; testI
   );
 }
 
-/** One row of slot radio buttons; a slot that cannot be picked is disabled. */
-function SlotPicker({
-  slots,
-  value,
-  onChange,
-  label,
-  isEnabled = () => true,
-  testId,
-}: {
-  slots: readonly string[];
-  value: string;
-  onChange: (slot: string) => void;
-  label: string;
-  isEnabled?: (slot: string) => boolean;
-  testId: string;
-}) {
+/** One row of slot radio buttons. */
+function SlotPicker({ value, onChange, label, testId }: { value: string; onChange: (slot: string) => void; label: string; testId: string }) {
   return (
     <div role="radiogroup" aria-label={label} className="flex flex-wrap gap-3" data-testid={testId}>
-      {slots.map((slot) => (
+      {OUTBOUND_SLOTS.map((slot) => (
         <button
           key={slot}
           type="button"
           role="radio"
           aria-checked={value === slot}
-          disabled={!isEnabled(slot)}
           onClick={() => onChange(slot)}
           className={cn(
-            'num min-h-touch rounded-lg border px-4 text-base font-bold disabled:cursor-not-allowed disabled:opacity-40',
+            'num min-h-touch rounded-lg border px-4 text-base font-bold',
             value === slot ? 'border-brand-ink bg-brand-ink text-on-ink' : 'border-border bg-bg',
           )}
         >
@@ -282,26 +298,113 @@ function SlotPicker({
   );
 }
 
-const isSlot = (slots: readonly string[], value: string | undefined) => (value && slots.includes(value) ? value : '');
+/**
+ * The stops of the chosen trip, grouped by line in riding order with the bus's time at each stop; the
+ * student picks the line and the stop together. Searchable by stop or line name.
+ */
+function LinePicker({
+  options,
+  value,
+  onChange,
+  label,
+  testId,
+}: {
+  options: Option[];
+  value: string;
+  onChange: (key: string) => void;
+  label: string;
+  testId: string;
+}) {
+  const p = t.pickup;
+  const searchId = useId();
+  const [term, setTerm] = useState('');
+  const needle = foldArabic(term.trim());
+  const lines = useMemo(() => {
+    const byLine = new Map<string, { id: string; name: string; departure: string | null; stops: Option[] }>();
+    for (const o of options) {
+      const line = byLine.get(o.route_id) ?? { id: o.route_id, name: o.route_name, departure: o.route_departure, stops: [] };
+      line.stops.push(o);
+      byLine.set(o.route_id, line);
+    }
+    return [...byLine.values()]
+      .map((line) => ({
+        ...line,
+        stops: needle ? line.stops.filter((o) => foldArabic(`${o.stop_name} ${o.route_name}`).includes(needle)) : line.stops,
+      }))
+      .filter((line) => line.stops.length);
+  }, [options, needle]);
 
-/** The seat of one patient: name, phone, then the same four choices as the student's own seat. */
+  if (!options.length) return <p className="rounded-lg bg-warning/10 p-3 text-sm font-semibold text-warning">{p.noLines}</p>;
+  return (
+    <div className="space-y-2" data-testid={testId}>
+      <div className="relative">
+        <label htmlFor={searchId} className="sr-only">
+          {p.search}
+        </label>
+        <Search className="pointer-events-none absolute start-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted" aria-hidden />
+        <Input id={searchId} className="ps-9" placeholder={p.search} value={term} onChange={(e) => setTerm(e.target.value)} data-testid={`${testId}-search`} />
+      </div>
+      <div role="radiogroup" aria-label={label} className="max-h-96 space-y-3 overflow-y-auto rounded-xl border border-border p-2" data-testid={`${testId}-options`}>
+        {lines.length ? (
+          lines.map((line) => (
+            <section key={line.id} aria-label={line.name}>
+              <p className="sticky top-0 z-[1] flex items-center gap-2 rounded-md bg-surface px-2 py-1.5 text-sm font-extrabold">
+                <Bus className="h-4 w-4 shrink-0 text-brand-ink" aria-hidden />
+                {line.name}
+                {line.departure ? <span className="num text-xs font-semibold text-muted">· {p.departs(formatClock(line.departure))}</span> : null}
+              </p>
+              <ul className="mt-1 space-y-1">
+                {line.stops.map((o) => {
+                  const key = optionKey(o);
+                  const on = key === value;
+                  return (
+                    <li key={key}>
+                      <button
+                        type="button"
+                        role="radio"
+                        aria-checked={on}
+                        onClick={() => onChange(key)}
+                        className={cn(
+                          'flex min-h-touch w-full items-center justify-between gap-2 rounded-lg border px-3 text-start',
+                          on ? 'border-brand-ink bg-brand-ink text-on-ink' : 'border-transparent hover:bg-surface',
+                        )}
+                      >
+                        <span className="font-semibold">{o.stop_name}</span>
+                        <span className={cn('num shrink-0 text-sm', on ? 'text-on-ink' : 'text-muted')}>{formatClock(o.stop_time)}</span>
+                      </button>
+                    </li>
+                  );
+                })}
+              </ul>
+            </section>
+          ))
+        ) : (
+          <p className="p-2 text-sm text-muted">{p.noStops}</p>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/** The seat of one patient: name, phone, then the same choices as the student's own seat. */
 function PatientForm({
   index,
   value,
   onChange,
-  items,
+  options,
 }: {
   index: number;
   value: PatientDraft;
   onChange: (next: PatientDraft) => void;
-  items: { id: string; name: string }[];
+  options: Option[];
 }) {
   const p = t.pickup;
   const nameId = useId();
   const phoneId = useId();
   const set = (patch: Partial<PatientDraft>) => onChange({ ...value, ...patch });
-  const returnAllowed = (slot: string) => !value.outbound_time || slot > value.outbound_time;
   const n = index + 1;
+  const slotOptions = options.filter((o) => o.slot === value.outbound_time);
+  const chosen = slotOptions.find((o) => optionKey(o) === value.option);
   return (
     <fieldset className="space-y-4 rounded-xl border border-border p-4" data-testid={`pickup-patient-${n}`}>
       <legend className="px-1 font-extrabold text-brand-ink">{p.patientTitle(n)}</legend>
@@ -325,45 +428,29 @@ function PatientForm({
       <div className="space-y-2">
         <p className="text-sm font-bold">{p.outboundTime}</p>
         <SlotPicker
-          slots={OUTBOUND_SLOTS}
           value={value.outbound_time}
-          onChange={(slot) => set({ outbound_time: slot, return_time: value.return_time > slot ? value.return_time : '' })}
+          onChange={(slot) => set({ outbound_time: slot, option: '' })}
           label={`${p.patientTitle(n)} — ${p.outboundTime}`}
           testId={`pickup-patient-${n}-outbound-times`}
         />
       </div>
-      <SearchPicker
-        items={items}
-        value={value.stop_id}
-        onChange={(id) => set({ stop_id: id })}
-        placeholder={p.search}
-        label={p.outboundStop}
-        emptyText={p.noStops}
-        testId={`pickup-patient-${n}-stop`}
-      />
-      <div className="space-y-2">
-        <p className="text-sm font-bold">{p.returnTime}</p>
-        <SlotPicker
-          slots={RETURN_SLOTS}
-          value={value.return_time}
-          onChange={(slot) => set({ return_time: slot })}
-          label={`${p.patientTitle(n)} — ${p.returnTime}`}
-          isEnabled={returnAllowed}
-          testId={`pickup-patient-${n}-return-times`}
-        />
-      </div>
-      <SearchPicker
-        items={items}
-        value={value.return_stop_id}
-        onChange={(id) => set({ return_stop_id: id })}
-        placeholder={p.search}
-        label={p.returnStop}
-        emptyText={p.noStops}
-        testId={`pickup-patient-${n}-return-stop`}
-      />
+      {value.outbound_time ? (
+        <>
+          <LinePicker
+            options={slotOptions}
+            value={value.option}
+            onChange={(key) => set({ option: key })}
+            label={`${p.patientTitle(n)} — ${p.outboundStop}`}
+            testId={`pickup-patient-${n}-stop`}
+          />
+          <ArrivalNote booking={optionBooking(value.outbound_time, chosen)} />
+        </>
+      ) : null}
     </fieldset>
   );
 }
+
+const isSlot = (value: string | undefined) => (value && (OUTBOUND_SLOTS as readonly string[]).includes(value) ? value : '');
 
 export function PickupPage() {
   const p = t.pickup;
@@ -372,14 +459,13 @@ export function PickupPage() {
   const toast = useToast();
   const win = usePickupWindow();
   const choices = useMyChoices(win.data);
-  const stops = useStopLibrary(me?.student?.university_id);
   const tomorrow = choices.data?.find((c) => c.service_date === win.data?.service_date);
-  const defaults = useBookingDefaults(me?.student?.id, win.data?.service_date, Boolean(win.data?.open) && choices.isSuccess && !tomorrow);
+  const canBook = Boolean(win.data?.open) && choices.isSuccess && !tomorrow;
+  const options = usePickupOptions(canBook);
+  const defaults = useBookingDefaults(me?.student?.id, win.data?.service_date, canBook);
   // null = not touched yet: the suggestion from the weekly schedule shows until the student picks
-  const [outboundPick, setOutboundTime] = useState<string | null>(null);
-  const [stopPick, setStopId] = useState<string | null>(null);
-  const [returnPick, setReturnTime] = useState<string | null>(null);
-  const [returnStopPick, setReturnStopId] = useState<string | null>(null);
+  const [slotPick, setSlot] = useState<string | null>(null);
+  const [optionPick, setOption] = useState<string | null>(null);
   const [confirming, setConfirming] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const patientsAllowed = usePatientsAllowed(me?.student?.id);
@@ -390,26 +476,29 @@ export function PickupPage() {
   const countId = useId();
   const sentPatients = withPatients && patientsAllowed.data ? patients : [];
 
-  const items = (stops.data ?? []).filter((s) => s.is_active).map((s) => ({ id: s.id, name: s.name }));
-  const homeStop = items.some((s) => s.id === defaults.data?.stopId) ? (defaults.data?.stopId ?? '') : '';
-  const outboundTime = outboundPick ?? isSlot(OUTBOUND_SLOTS, defaults.data?.outbound);
-  const stopId = stopPick ?? homeStop;
-  const returnAllowed = (slot: string) => !outboundTime || slot > outboundTime;
-  const wantedReturn = returnPick ?? isSlot(RETURN_SLOTS, defaults.data?.ret);
-  // a return no later than the chosen outbound is dropped
-  const returnTime = wantedReturn && returnAllowed(wantedReturn) ? wantedReturn : '';
-  const returnStopId = returnStopPick ?? homeStop;
-  const suggested = Boolean(defaults.data && (defaults.data.outbound || homeStop));
+  const all = options.data ?? [];
+  const slot = slotPick ?? isSlot(defaults.data?.outbound);
+  const slotOptions = all.filter((o) => o.slot === slot);
+  // the nearest stop is preselected when a line of that trip passes it
+  const homeOption = slotOptions.find((o) => o.stop_id === defaults.data?.stopId);
+  const optionKeyValue = optionPick ?? (homeOption ? optionKey(homeOption) : '');
+  const chosen = slotOptions.find((o) => optionKey(o) === optionKeyValue);
+  const suggested = Boolean(defaults.data && (defaults.data.outbound || homeOption));
+  const optionOf = (time: string, key: string) => all.find((o) => o.slot === time && optionKey(o) === key);
 
   const save = useMutation({
     mutationFn: async () =>
       unwrap(
         await supabase.rpc('choose_my_pickup', {
-          p_outbound_time: outboundTime,
-          p_stop_id: stopId,
-          p_return_time: returnTime,
-          p_return_stop_id: returnStopId,
-          p_patients: sentPatients.map((x) => ({ ...x, full_name: x.full_name.trim(), phone: x.phone.trim() })),
+          p_outbound_time: slot,
+          p_route_id: chosen?.route_id,
+          p_stop_id: chosen?.stop_id,
+          p_patients: sentPatients.map((x) => ({
+            full_name: x.full_name.trim(),
+            phone: x.phone.trim(),
+            outbound_time: x.outbound_time,
+            ...splitKey(x.option),
+          })),
         }),
       ),
     onSuccess: () => {
@@ -422,6 +511,7 @@ export function PickupPage() {
       setConfirming(false);
       setError(errorMessage(e));
       void qc.invalidateQueries({ queryKey: ['pickup-window'] });
+      void qc.invalidateQueries({ queryKey: ['pickup-options'] });
       void qc.invalidateQueries({ queryKey: ['my-pickups'] });
     },
   });
@@ -429,14 +519,13 @@ export function PickupPage() {
   if (win.isLoading || !win.data || choices.isLoading) return <ListSkeleton rows={3} />;
   const w = win.data;
   const today = choices.data?.find((c) => c.service_date === w.today);
-  const nameOf = (id: string) => items.find((s) => s.id === id)?.name ?? null;
 
   const submit = () => {
-    if (!outboundTime || !stopId || !returnTime || !returnStopId) {
+    if (!slot || !chosen) {
       setError(p.missing);
       return;
     }
-    const incomplete = sentPatients.findIndex((x) => !patientComplete(x));
+    const incomplete = sentPatients.findIndex((x) => !patientComplete(x) || !optionOf(x.outbound_time, x.option));
     if (incomplete >= 0) {
       setError(p.patientsMissing(incomplete + 1));
       return;
@@ -465,36 +554,28 @@ export function PickupPage() {
           {suggested ? <p className="rounded-lg bg-brand/10 p-3 text-sm">{p.fromSchedule}</p> : null}
           <div className="space-y-2">
             <CardTitle className="mb-0">1. {p.outboundTime}</CardTitle>
-            <SlotPicker slots={OUTBOUND_SLOTS} value={outboundTime} onChange={setOutboundTime} label={p.outboundTime} testId="pickup-outbound-times" />
-          </div>
-          <div>
-            <CardTitle>2. {p.outboundStop}</CardTitle>
-            <SearchPicker items={items} value={stopId} onChange={setStopId} placeholder={p.search} label={p.outboundStop} emptyText={p.noStops} testId="pickup-stop" />
-          </div>
-          <div className="space-y-2">
-            <CardTitle className="mb-0">3. {p.returnTime}</CardTitle>
             <SlotPicker
-              slots={RETURN_SLOTS}
-              value={returnTime}
-              onChange={setReturnTime}
-              label={p.returnTime}
-              isEnabled={returnAllowed}
-              testId="pickup-return-times"
-            />
-            <p className="text-xs text-muted">{p.returnAfterOutbound}</p>
-          </div>
-          <div>
-            <CardTitle>4. {p.returnStop}</CardTitle>
-            <SearchPicker
-              items={items}
-              value={returnStopId}
-              onChange={setReturnStopId}
-              placeholder={p.search}
-              label={p.returnStop}
-              emptyText={p.noStops}
-              testId="pickup-return-stop"
+              value={slot}
+              onChange={(next) => {
+                setSlot(next);
+                setOption('');
+              }}
+              label={p.outboundTime}
+              testId="pickup-outbound-times"
             />
           </div>
+          {slot ? (
+            <div className="space-y-2">
+              <CardTitle className="mb-0">2. {p.outboundStop}</CardTitle>
+              <p className="text-xs text-muted">{p.stopHint}</p>
+              {options.isLoading ? (
+                <ListSkeleton rows={2} />
+              ) : (
+                <LinePicker options={slotOptions} value={optionKeyValue} onChange={setOption} label={p.outboundStop} testId="pickup-stop" />
+              )}
+              <ArrivalNote booking={optionBooking(slot, chosen)} testId="pickup-arrival" />
+            </div>
+          ) : null}
           {patientsAllowed.data ? (
             <div className="space-y-4 border-t border-border pt-4" data-testid="pickup-patients">
               <label className="flex min-h-touch items-center gap-3 text-base font-bold">
@@ -531,7 +612,7 @@ export function PickupPage() {
                       key={i}
                       index={i}
                       value={x}
-                      items={items}
+                      options={all}
                       onChange={(next) => setPatients((list) => list.map((old, j) => (j === i ? next : old)))}
                     />
                   ))}
@@ -572,20 +653,14 @@ export function PickupPage() {
         busy={save.isPending}
         onConfirm={() => save.mutate()}
       >
-        <ChoiceSummary
-          booking={{ outbound_time: outboundTime, stop: nameOf(stopId), return_time: returnTime, return_stop: nameOf(returnStopId) }}
-          testId="pickup-confirm-summary"
-        />
+        <ChoiceSummary booking={optionBooking(slot, chosen)} testId="pickup-confirm-summary" />
         <div className="mt-3">
           <PatientsSummary
             patients={sentPatients.map((x, i) => ({
               seq: i + 1,
               full_name: x.full_name.trim(),
               phone: x.phone.trim(),
-              outbound_time: x.outbound_time,
-              stop: nameOf(x.stop_id),
-              return_time: x.return_time,
-              return_stop: nameOf(x.return_stop_id),
+              ...optionBooking(x.outbound_time, optionOf(x.outbound_time, x.option)),
             }))}
             testId="pickup-confirm-patients"
           />

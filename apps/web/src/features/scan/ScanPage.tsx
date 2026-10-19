@@ -597,7 +597,8 @@ function ResultPopup({
                 <DirectionBadge direction={result.direction} className="px-4 py-1.5 text-lg" />
               </span>
             </div>
-            {result.booking ? <BookingLine booking={result.booking} direction={result.direction} /> : null}
+            {/* only the outbound seat is booked (migration 0036): a return scan shows no booking */}
+            {result.booking && result.direction === 'outbound' ? <BookingLine booking={result.booking} direction={result.direction} /> : null}
             {result.bus ? (
               <p className="flex items-center justify-center gap-2 text-sm" data-testid="scan-result-bus">
                 <Bus className="h-4 w-4 shrink-0" aria-hidden />

@@ -120,45 +120,87 @@ describe('recurring notifications', () => {
 });
 
 describe('tomorrow seat booking', () => {
-  const book = (client: SupabaseClient, outbound: string | null, stop: string, ret: string | null, retStop: string) =>
-    client.rpc('choose_my_pickup', { p_outbound_time: outbound, p_stop_id: stop, p_return_time: ret, p_return_stop_id: retStop });
+  // Tuesday 2026-10-06 is booked on Monday evening
+  let lineA: string; // 7:00 trip → the 8:00 slot
+  let lineB: string; // 8:50 trip → the 10:00 slot
+  let mondayOnly: string;
+  const book = (client: SupabaseClient, outbound: string | null, route: string | null, stop: string) =>
+    client.rpc('choose_my_pickup', { p_outbound_time: outbound, p_route_id: route, p_stop_id: stop });
 
   beforeAll(async () => {
     await setSettings(fx, { pickup_open_time: '17:00', pickup_close_time: '21:00' });
+    const line = async (name: string, departure: string, stops: [string, string | null][], days: number[] | null = null) => {
+      const { data } = await service
+        .from('routes')
+        .insert({ university_id: fx.universityId, name, direction: 'outbound', departure_time: departure, active_days: days })
+        .select('id')
+        .single();
+      await service.from('route_stops').insert(stops.map(([stop, time], i) => ({ route_id: data?.id, seq: i + 1, stop_id: stop, departure_time: time })));
+      return data?.id as string;
+    };
+    lineA = await line('خط أ — الرحلة الأولى', '07:00', [[stopA, '07:30'], [stopB, '07:45']]);
+    // stopB has no time on this trip: it is not offered
+    lineB = await line('خط أ — الرحلة الثانية', '08:50', [[stopA, '09:20'], [stopB, null]]);
+    mondayOnly = await line('خط الإثنين', '07:10', [[stopB, '07:20']], [1]);
   });
 
   it('opens and closes at the times set in the settings', async () => {
     await freeze('2026-10-05 16:59');
     expect((await asA.rpc('pickup_window')).data).toMatchObject({ open: false, phase: 'before', opens_at: '17:00', closes_at: '21:00', service_date: '2026-10-06' });
-    expect((await book(asA, '08:00', stopA, '14:00', stopA)).error?.message).toBe('PICKUP_CLOSED');
+    expect((await book(asA, '08:00', lineA, stopA)).error?.message).toBe('PICKUP_CLOSED');
     await freeze('2026-10-05 21:00');
     expect((await asA.rpc('pickup_window')).data).toMatchObject({ open: false, phase: 'after' });
-    expect((await book(asA, '08:00', stopA, '14:00', stopA)).error?.message).toBe('PICKUP_CLOSED');
+    expect((await book(asA, '08:00', lineA, stopA)).error?.message).toBe('PICKUP_CLOSED');
   });
 
-  it('takes the fixed bus slots only, the return after the outbound, saves once and locks it', async () => {
+  it("offers each trip's lines that run tomorrow, with only the stops that have a time on the line", async () => {
     await freeze('2026-10-05 18:00');
-    expect((await asA.rpc('pickup_window')).data).toMatchObject({ open: true, phase: 'open' });
+    const { data, error } = await asA.rpc('pickup_options');
+    expect(error).toBeNull();
+    const rows = (data as { slot: string; route_id: string; stop_id: string; stop_time: string }[]).filter((r) =>
+      [lineA, lineB, mondayOnly].includes(r.route_id),
+    );
+    expect(rows).toEqual([
+      expect.objectContaining({ slot: '08:00:00', route_id: lineA, stop_id: stopA, stop_time: '07:30:00' }),
+      expect.objectContaining({ slot: '08:00:00', route_id: lineA, stop_id: stopB, stop_time: '07:45:00' }),
+      expect.objectContaining({ slot: '10:00:00', route_id: lineB, stop_id: stopA, stop_time: '09:20:00' }),
+    ]);
+  });
 
-    expect((await book(asA, null, stopA, '14:00', stopB)).error?.message).toBe('OUTBOUND_TIME_INVALID');
-    expect((await book(asA, '09:00', stopA, '14:00', stopB)).error?.message).toBe('OUTBOUND_TIME_INVALID');
-    expect((await book(asA, '08:00', stopA, null, stopB)).error?.message).toBe('RETURN_TIME_INVALID');
-    expect((await book(asA, '08:00', stopA, '16:00', stopB)).error?.message).toBe('RETURN_TIME_INVALID');
-    // 11:30 is a return slot, but not after a 12:00 outbound
-    expect((await book(asA, '12:00', stopA, '11:30', stopB)).error?.message).toBe('RETURN_TIME_INVALID');
-    expect((await book(asA, '08:00', stopA, '14:00', foreignStop)).error?.message).toBe('RETURN_STOP_INVALID');
-    expect((await book(asA, '08:00', foreignStop, '14:00', stopA)).error?.message).toBe('STOP_INVALID');
-    // the old three-argument call is gone
-    expect((await asA.rpc('choose_my_pickup', { p_stop_id: stopA, p_return_time: '14:00', p_return_stop_id: stopB })).error).not.toBeNull();
+  it('takes a stop of a line of the chosen trip only, keeps the line and the stop time, saves once and locks it', async () => {
+    await freeze('2026-10-05 18:00');
+    expect((await book(asA, null, lineA, stopA)).error?.message).toBe('OUTBOUND_TIME_INVALID');
+    expect((await book(asA, '09:00', lineA, stopA)).error?.message).toBe('OUTBOUND_TIME_INVALID');
+    // the line is not a 10:00 trip / the stop has no time on that line / the line does not run on Tuesday
+    expect((await book(asA, '10:00', lineA, stopA)).error?.message).toBe('STOP_INVALID');
+    expect((await book(asA, '10:00', lineB, stopB)).error?.message).toBe('STOP_INVALID');
+    expect((await book(asA, '08:00', mondayOnly, stopB)).error?.message).toBe('STOP_INVALID');
+    expect((await book(asA, '08:00', lineA, foreignStop)).error?.message).toBe('STOP_INVALID');
+    // the return is no longer booked
+    expect(
+      (await asA.rpc('choose_my_pickup', { p_outbound_time: '08:00', p_stop_id: stopA, p_return_time: '14:00', p_return_stop_id: stopB })).error,
+    ).not.toBeNull();
 
-    const ok = await book(asA, '10:00', stopA, '14:00', stopB);
+    const ok = await book(asA, '10:00', lineB, stopA);
     expect(ok.error).toBeNull();
     expect(ok.data).toBe('2026-10-06');
-    expect((await book(asA, '08:00', stopB, '15:30', stopB)).error?.message).toBe('PICKUP_LOCKED');
-    expect((await book(asB, '12:00', stopA, '15:30', stopA)).error).toBeNull();
+    expect((await book(asA, '08:00', lineA, stopB)).error?.message).toBe('PICKUP_LOCKED');
+    expect((await book(asB, '08:00', lineA, stopA)).error).toBeNull();
 
-    const { data: own } = await asA.from('pickup_choices').select('service_date, outbound_time, stop_id, return_time, return_stop_id');
-    expect(own).toEqual([{ service_date: '2026-10-06', outbound_time: '10:00:00', stop_id: stopA, return_time: '14:00:00', return_stop_id: stopB }]);
+    const { data: own } = await asA
+      .from('pickup_choices')
+      .select('service_date, outbound_time, stop_id, outbound_route_id, outbound_route_name, outbound_stop_time, return_time');
+    expect(own).toEqual([
+      {
+        service_date: '2026-10-06',
+        outbound_time: '10:00:00',
+        stop_id: stopA,
+        outbound_route_id: lineB,
+        outbound_route_name: 'خط أ — الرحلة الثانية',
+        outbound_stop_time: '09:20:00',
+        return_time: null,
+      },
+    ]);
     const peek = await asB.from('pickup_choices').select('student_id').eq('student_id', a.id);
     expect(peek.data).toEqual([]);
     const direct = await asB
@@ -167,32 +209,24 @@ describe('tomorrow seat booking', () => {
     expect(direct.error).not.toBeNull();
   });
 
-  it('feeds the staff statistics (outbound by time, return by time) and the archive', async () => {
-    await freeze('2026-10-06 18:30'); // next evening: a new day
-    expect((await book(asA, '08:00', stopB, '15:30', stopB)).error).toBeNull();
-
-    const { data: outbound, error } = await gs.rpc('pickup_outbound_stats', { p_university_id: fx.universityId, p_date: '2026-10-06' });
+  it('shows staff each seat on the line it was booked on, and feeds the archive', async () => {
+    const { data: seats, error } = await gs.rpc('pickup_passengers', { p_university_id: fx.universityId, p_date: '2026-10-06' });
     expect(error).toBeNull();
-    expect(outbound).toEqual([
-      { outbound_time: '10:00:00', area_id: fx.areaIds['الرجاء'], area_name: 'الرجاء', stop_id: stopA, stop_name: 'دوار الصاخور', students: 1 },
-      { outbound_time: '12:00:00', area_id: fx.areaIds['الرجاء'], area_name: 'الرجاء', stop_id: stopA, stop_name: 'دوار الصاخور', students: 1 },
-    ]);
-    // the older per-stop totals still work
-    const { data: stats } = await gs.rpc('pickup_stats', { p_university_id: fx.universityId, p_date: '2026-10-06' });
-    expect(stats).toEqual([{ area_id: fx.areaIds['الرجاء'], area_name: 'الرجاء', stop_id: stopA, stop_name: 'دوار الصاخور', students: 2 }]);
-    const { data: back } = await gs.rpc('pickup_return_stats', { p_university_id: fx.universityId, p_date: '2026-10-06' });
-    // «جسر الحج» was saved without an area, so it got an area of its own name (every stop is an area)
-    expect(back).toEqual([
-      { return_time: '14:00:00', area_id: expect.any(String), area_name: 'جسر الحج', stop_id: stopB, stop_name: 'جسر الحج', students: 1 },
-      { return_time: '15:30:00', area_id: fx.areaIds['الرجاء'], area_name: 'الرجاء', stop_id: stopA, stop_name: 'دوار الصاخور', students: 1 },
-    ]);
+    expect(seats).toHaveLength(2);
+    expect(seats).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ direction: 'outbound', slot: '08:00:00', route_id: lineA, stop_seq: 1, stop_time: '07:30:00' }),
+        expect.objectContaining({ direction: 'outbound', slot: '10:00:00', route_id: lineB, stop_seq: 1, stop_time: '09:20:00' }),
+      ]),
+    );
+
+    await freeze('2026-10-06 18:30'); // next evening: a new day (Wednesday)
+    expect((await book(asA, '08:00', lineA, stopB)).error).toBeNull();
     const { data: days } = await gs.rpc('pickup_days', { p_university_id: fx.universityId });
     expect(days).toEqual([
       { service_date: '2026-10-07', students: 1 },
       { service_date: '2026-10-06', students: 2 },
     ]);
-    expect((await asA.rpc('pickup_return_stats', { p_university_id: fx.universityId, p_date: '2026-10-06' })).error?.message).toBe('FORBIDDEN');
-    expect((await asA.rpc('pickup_outbound_stats', { p_university_id: fx.universityId, p_date: '2026-10-06' })).error?.message).toBe('FORBIDDEN');
+    expect((await asA.rpc('pickup_passengers', { p_university_id: fx.universityId, p_date: '2026-10-06' })).error?.message).toBe('FORBIDDEN');
   });
 });
-

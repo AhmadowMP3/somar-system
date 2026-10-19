@@ -222,7 +222,8 @@ function PickupsBody({ universityId }: { universityId: string }) {
                 <h2 className="text-lg font-extrabold text-brand-ink">{s.byLines}</h2>
                 <p className="text-sm text-muted">{s.linesHint}</p>
               </div>
-              {(['outbound', 'return'] as const).map((direction) => {
+              {/* outbound only: return seats are no longer booked (migration 0036) */}
+              {(['outbound'] as const).map((direction) => {
                 const legs = rows.filter((r) => r.direction === direction);
                 // one section per trip (booked time), old bookings without a time last
                 const slots = [...new Set(legs.map((r) => r.slot))].sort((a, b) => (a ?? '99').localeCompare(b ?? '99'));
@@ -376,9 +377,6 @@ function BookingsList({ seats, date }: { seats: Seat[]; date: string }) {
         [c.outboundTime]: clockOr(x.outbound?.slot ?? null),
         [c.outboundStop]: x.outbound?.stop_name ?? '',
         [c.outboundLine]: lineOf(x.outbound),
-        [c.returnTime]: clockOr(x.return?.slot ?? null),
-        [c.returnStop]: x.return?.stop_name ?? '',
-        [c.returnLine]: lineOf(x.return),
       })),
     );
 
@@ -435,16 +433,6 @@ function BookingsList({ seats, date }: { seats: Seat[]; date: string }) {
                 <span>
                   <span className="num">{clockOr(x.outbound?.slot ?? null)}</span> — {x.outbound?.stop_name ?? t.pickup.unknown}
                   <span className="block text-xs text-muted">{lineOf(x.outbound)}</span>
-                </span>
-              ),
-            },
-            {
-              key: 'return',
-              header: c.returnTime,
-              cell: (x) => (
-                <span>
-                  <span className="num">{clockOr(x.return?.slot ?? null)}</span> — {x.return?.stop_name ?? t.pickup.unknown}
-                  <span className="block text-xs text-muted">{lineOf(x.return)}</span>
                 </span>
               ),
             },
