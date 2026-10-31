@@ -36,3 +36,33 @@ export function snapDay(outbound: string, ret: string): { outbound: string; ret:
   if (minutes(back) <= minutes(out)) back = RETURN_SLOTS.find((s) => minutes(s) > minutes(out)) ?? RETURN_SLOTS[RETURN_SLOTS.length - 1]!;
   return { outbound: out, ret: back };
 }
+
+export type TripDirection = 'outbound' | 'return';
+
+/** The fields of a route that decide which trip it serves. */
+export type TripRoute = {
+  direction: string;
+  departure_time: string | null;
+  /** The earliest stop time, used when the route itself has no departure time. */
+  first_stop_time?: string | null;
+};
+
+/**
+ * Whether a line serves a trip (same rule as the seat booking, migration 0036): an outbound line leaves after
+ * the previous outbound slot and before this one (8:00 → the 7:00 trips, 10:00 → 8:50, 12:00 → the third
+ * period); a return line leaves from this return slot until the next, or has no time (it serves every slot).
+ */
+export function servesTrip(route: TripRoute, direction: TripDirection, slot: string): boolean {
+  if (route.direction !== direction && route.direction !== 'both') return false;
+  const at = minutes(slot);
+  const departs = route.departure_time ?? route.first_stop_time ?? null;
+  if (direction === 'outbound') {
+    if (!departs) return false;
+    const before = OUTBOUND_SLOTS.filter((s) => minutes(s) < at);
+    const low = before.length ? minutes(before[before.length - 1] as string) : 0;
+    return minutes(departs) >= low && minutes(departs) < at;
+  }
+  if (!route.departure_time) return true;
+  const next = RETURN_SLOTS.find((s) => minutes(s) > at);
+  return minutes(route.departure_time) >= at && minutes(route.departure_time) < (next ? minutes(next) : 24 * 60);
+}

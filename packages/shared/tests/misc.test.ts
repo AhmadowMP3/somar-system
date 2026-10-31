@@ -172,3 +172,20 @@ describe('bus time slots', () => {
     expect(snapDay('07:30', '12:00')).toEqual({ outbound: '08:00', ret: '14:00' });
   });
 });
+
+describe('servesTrip', () => {
+  it('matches outbound lines to the slot after them and return lines to their window', async () => {
+    const { servesTrip } = await import('../src/schedule.js');
+    const line = (direction: string, departure_time: string | null, first_stop_time: string | null = null) => ({ direction, departure_time, first_stop_time });
+    expect(servesTrip(line('outbound', '07:15:00'), 'outbound', '08:00')).toBe(true);
+    expect(servesTrip(line('outbound', '07:15:00'), 'outbound', '10:00')).toBe(false);
+    expect(servesTrip(line('outbound', '08:50:00'), 'outbound', '10:00')).toBe(true);
+    expect(servesTrip(line('both', null, '10:50:00'), 'outbound', '12:00')).toBe(true);
+    expect(servesTrip(line('outbound', null), 'outbound', '08:00')).toBe(false);
+    expect(servesTrip(line('return', null), 'return', '11:30')).toBe(true);
+    expect(servesTrip(line('return', '14:30:00'), 'return', '14:00')).toBe(true);
+    expect(servesTrip(line('return', '14:30:00'), 'return', '15:30')).toBe(false);
+    expect(servesTrip(line('return', '15:30:00'), 'return', '15:30')).toBe(true);
+    expect(servesTrip(line('outbound', '07:00:00'), 'return', '14:00')).toBe(false);
+  });
+});

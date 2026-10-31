@@ -34,6 +34,8 @@ let staffAll: SupabaseClient;
 let staffNoFeedback: SupabaseClient;
 let supervisorToken: string;
 let png: Buffer;
+let morningLine: string;
+let otherLine: string;
 
 const auth = (token: string) => ({ authorization: `Bearer ${token}` });
 const send = (token: string, fields: Record<string, string>, images = 0) => {
@@ -59,6 +61,11 @@ beforeAll(async () => {
   await service.from('profiles').update({ permissions: ['dashboard'] }).eq('id', limited.profileId);
   staffNoFeedback = limited.client;
   supervisorToken = await accessToken((await createStaff(fx, 'supervisor')).client);
+  const route = async (university: string, name: string, direction: string, departure: string) =>
+    ((await service.from('routes').insert({ university_id: university, name, direction, departure_time: departure }).select('id').single()).data?.id as string);
+  morningLine = await route(fx.universityId, 'الخط 2 — الرحلة الأولى', 'outbound', '07:15');
+  await route(fx.universityId, 'الخط 2 — الرحلة الثانية', 'outbound', '08:50');
+  otherLine = await route(other.universityId, 'خط جامعة أخرى', 'outbound', '07:15');
 });
 
 afterAll(async () => {
@@ -70,16 +77,37 @@ afterAll(async () => {
 
 describe('notes and complaints', () => {
   it('a rider sends a complaint with two photos; they are shrunk and stored privately; the staff are notified', async () => {
-    const res = await send(student.token, { kind: 'complaint', body: 'الباص تأخر عن دوار الكرة' }, 2);
+    const res = await send(student.token, { kind: 'complaint', body: 'الباص تأخر عن دوار الكرة', trip_direction: 'outbound', trip_time: '08:00', route_id: morningLine }, 2);
     expect(res.statusCode).toBe(201);
     const id = (res.json() as { id: string }).id;
     const { data: row } = await service.from('feedback').select('*').eq('id', id).single();
-    expect(row).toMatchObject({ author_type: 'student', kind: 'complaint', status: 'new', author_student_id: student.id });
+    expect(row).toMatchObject({
+      author_type: 'student',
+      kind: 'complaint',
+      status: 'new',
+      author_student_id: student.id,
+      trip_direction: 'outbound',
+      trip_time: '08:00:00',
+      route_id: morningLine,
+      route_name: 'الخط 2 — الرحلة الأولى',
+    });
     expect(row?.image_paths).toEqual([`${fx.universityId}/${id}/1.jpg`, `${fx.universityId}/${id}/2.jpg`]);
     const { data: file } = await service.storage.from('feedback-images').download(row?.image_paths[0] as string);
     expect(await sharp(Buffer.from(await (file as Blob).arrayBuffer())).metadata()).toMatchObject({ format: 'jpeg', width: 1600, height: 800 });
     const { data: notes } = await service.from('notifications').select('type, student_id, title').eq('university_id', fx.universityId).eq('type', 'FEEDBACK');
     expect(notes).toEqual([{ type: 'FEEDBACK', student_id: null, title: expect.stringContaining('شكوى جديدة') }]);
+  });
+
+  it('a complaint must name a system time and one of the lines of that trip', async () => {
+    const complaint = (extra: Record<string, string>) => send(student.token, { kind: 'complaint', body: 'شكوى', ...extra });
+    expect((await complaint({})).statusCode).toBe(400);
+    expect((await complaint({ trip_direction: 'outbound', trip_time: '09:00', route_id: morningLine })).statusCode).toBe(400);
+    // the 7:15 line does not run the 10:00 trip; a line of another university is never accepted
+    expect((await complaint({ trip_direction: 'outbound', trip_time: '10:00', route_id: morningLine })).statusCode).toBe(400);
+    expect((await complaint({ trip_direction: 'outbound', trip_time: '08:00', route_id: otherLine })).statusCode).toBe(400);
+    // lines run that trip, so one must be named
+    expect((await complaint({ trip_direction: 'outbound', trip_time: '08:00' })).statusCode).toBe(400);
+    expect(((await student.client.from('feedback').select('id')).data ?? []).length).toBe(1);
   });
 
   it('rejects a third photo, an empty text and a non-image file', async () => {

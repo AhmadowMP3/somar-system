@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
+import { OUTBOUND_SLOTS, RETURN_SLOTS, servesTrip } from '@somar/shared';
 import { getSettings } from '../lib/audit.js';
 import { authOf, type AppContext } from '../lib/auth.js';
 import { ApiError, badRequest } from '../lib/errors.js';
@@ -15,7 +16,16 @@ const DAILY_LIMIT = 10;
 const feedbackSchema = z.object({
   kind: z.enum(['note', 'complaint']),
   body: z.string().trim().min(3).max(2000),
+  // a complaint names the trip: direction, the system's bus time and the line
+  trip_direction: z.enum(['outbound', 'return']).optional(),
+  trip_time: z
+    .string()
+    .regex(/^\d{2}:\d{2}$/)
+    .optional(),
+  route_id: z.string().uuid().optional(),
 });
+
+type RouteRow = { id: string; name: string; direction: string; departure_time: string | null; route_stops: { departure_time: string | null }[] };
 
 export async function feedbackRoutes(app: FastifyInstance, ctx: AppContext) {
   const { db, requireRole } = ctx;
@@ -38,6 +48,30 @@ export async function feedbackRoutes(app: FastifyInstance, ctx: AppContext) {
     const universityId = (student?.university_id as string | undefined) ?? auth.profile.university_id;
     if (!universityId) throw new ApiError(403, 'FORBIDDEN');
     const authorType = student && student.kind !== 'student' ? (student.kind as string) : auth.profile.role === 'student' ? 'student' : 'supervisor';
+
+    // the trip of a complaint: a system time of that direction, and one of the lines running that trip
+    let trip: { trip_direction: string; trip_time: string; route_id: string | null; route_name: string | null } | null = null;
+    if (input.data.kind === 'complaint') {
+      const { trip_direction: direction, trip_time: time, route_id: routeId } = input.data;
+      const slots: readonly string[] = direction === 'return' ? RETURN_SLOTS : OUTBOUND_SLOTS;
+      if (!direction || !time || !slots.includes(time)) throw badRequest('FEEDBACK_TRIP');
+      const { data: routes } = await db
+        .from('routes')
+        .select('id, name, direction, departure_time, route_stops(departure_time)')
+        .eq('university_id', universityId)
+        .eq('is_active', true);
+      const lines = ((routes ?? []) as RouteRow[]).filter((r) =>
+        servesTrip(
+          { ...r, first_stop_time: r.route_stops.map((x) => x.departure_time).filter(Boolean).sort()[0] ?? null },
+          direction,
+          time,
+        ),
+      );
+      const line = lines.find((r) => r.id === routeId);
+      // a line must be named whenever one runs that trip
+      if (routeId ? !line : lines.length > 0) throw badRequest('FEEDBACK_TRIP');
+      trip = { trip_direction: direction, trip_time: time, route_id: line?.id ?? null, route_name: line?.name ?? null };
+    }
 
     const since = new Date(Date.now() - 86_400_000).toISOString();
     const { count } = await db
@@ -73,6 +107,7 @@ export async function feedbackRoutes(app: FastifyInstance, ctx: AppContext) {
       kind: input.data.kind,
       body: input.data.body,
       image_paths: paths,
+      ...trip,
     });
     if (error) {
       if (paths.length) await db.storage.from(FEEDBACK_BUCKET).remove(paths);

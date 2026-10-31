@@ -1,5 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
+import { Bus } from 'lucide-react';
 import { useState } from 'react';
+import { formatClock } from '@somar/shared';
 import { Dialog } from '@/components/ui/overlay';
 import { Badge } from '@/components/ui/primitives';
 import { t } from '@/i18n/ar';
@@ -22,9 +24,13 @@ export type FeedbackRow = {
   reply: string | null;
   replied_at: string | null;
   created_at: string;
+  trip_direction: 'outbound' | 'return' | null;
+  trip_time: string | null;
+  route_name: string | null;
 };
 
-export const FEEDBACK_COLUMNS = 'id, university_id, author_name, author_code, author_type, kind, body, image_paths, status, reply, replied_at, created_at';
+export const FEEDBACK_COLUMNS =
+  'id, university_id, author_name, author_code, author_type, kind, body, image_paths, status, reply, replied_at, created_at, trip_direction, trip_time, route_name';
 
 const STATUS_TONE: Record<FeedbackStatus, 'warning' | 'info' | 'success'> = { new: 'warning', in_progress: 'info', resolved: 'success' };
 
@@ -34,6 +40,21 @@ export function StatusBadge({ status }: { status: FeedbackStatus }) {
 
 export function KindBadge({ kind }: { kind: FeedbackKind }) {
   return <Badge tone={kind === 'complaint' ? 'danger' : 'neutral'}>{t.feedback.kinds[kind]}</Badge>;
+}
+
+/** «عودة 2:00 م · الخط 3 — الرحلة الثانية»: the trip a complaint is about. */
+export function TripLine({ row }: { row: Pick<FeedbackRow, 'trip_direction' | 'trip_time' | 'route_name'> }) {
+  if (!row.trip_direction) return null;
+  return (
+    <p className="flex flex-wrap items-center gap-2 rounded-lg bg-surface px-3 py-2 text-sm font-semibold" data-testid="feedback-trip">
+      <Bus className="h-4 w-4 shrink-0 text-brand-ink" aria-hidden />
+      <span className="num">
+        {t.feedback.directions[row.trip_direction]} {formatClock(row.trip_time)}
+      </span>
+      <span className="text-muted">·</span>
+      <span>{row.route_name ?? t.feedback.noLine}</span>
+    </p>
+  );
 }
 
 /** The submission's photos as thumbnails (signed URLs, private bucket); a tap opens the full photo. */

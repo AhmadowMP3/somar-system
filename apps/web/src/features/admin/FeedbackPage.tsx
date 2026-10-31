@@ -5,7 +5,7 @@ import { foldArabic, formatDateTime } from '@somar/shared';
 import { useToast } from '@/components/ui/overlay';
 import { Badge, Button, Card, Field, Input, Select, Textarea } from '@/components/ui/primitives';
 import { EmptyState, PageHeader, QueryState } from '@/components/ui/states';
-import { FEEDBACK_COLUMNS, FeedbackImages, KindBadge, StatusBadge, type FeedbackRow, type FeedbackStatus } from '@/features/feedback/common';
+import { FEEDBACK_COLUMNS, FeedbackImages, KindBadge, StatusBadge, TripLine, type FeedbackRow, type FeedbackStatus } from '@/features/feedback/common';
 import { t } from '@/i18n/ar';
 import { errorMessage } from '@/lib/errors';
 import { supabase, unwrap } from '@/lib/supabase';
@@ -20,10 +20,11 @@ export default function FeedbackAdminPage() {
 
 function FeedbackBody({ universityId }: { universityId: string }) {
   const f = t.feedback;
-  const ids = { search: useId(), kind: useId(), author: useId() };
+  const ids = { search: useId(), kind: useId(), author: useId(), line: useId() };
   const [status, setStatus] = useState<FeedbackStatus | 'all'>('new');
   const [kind, setKind] = useState('');
   const [author, setAuthor] = useState('');
+  const [line, setLine] = useState('');
   const [search, setSearch] = useState('');
   const rows = useQuery({
     queryKey: ['feedback', universityId],
@@ -44,12 +45,16 @@ function FeedbackBody({ universityId }: { universityId: string }) {
       <QueryState query={rows}>
         {(all) => {
           const count = (s: FeedbackStatus) => all.filter((r) => r.status === s).length;
+          const lineNames = [...new Set(all.map((r) => r.route_name).filter((n): n is string => Boolean(n)))].sort((a, b) =>
+            a.localeCompare(b, 'ar'),
+          );
           const needle = foldArabic(search.trim());
           const shown = all.filter(
             (r) =>
               (status === 'all' || r.status === status) &&
               (!kind || r.kind === kind) &&
               (!author || r.author_type === author) &&
+              (!line || r.route_name === line) &&
               (!needle || foldArabic(`${r.author_name} ${r.author_code ?? ''} ${r.body}`).includes(needle)),
           );
           return (
@@ -72,7 +77,7 @@ function FeedbackBody({ universityId }: { universityId: string }) {
                   </button>
                 ))}
               </div>
-              <Card className="grid gap-3 sm:grid-cols-3">
+              <Card className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
                 <Field label={f.search} htmlFor={ids.search}>
                   <div className="relative">
                     <Input id={ids.search} className="ps-9" value={search} onChange={(e) => setSearch(e.target.value)} placeholder={f.searchPlaceholder} />
@@ -92,6 +97,16 @@ function FeedbackBody({ universityId }: { universityId: string }) {
                     {(['student', 'doctor', 'employee', 'supervisor'] as const).map((a) => (
                       <option key={a} value={a}>
                         {f.authors[a]}
+                      </option>
+                    ))}
+                  </Select>
+                </Field>
+                <Field label={f.line} htmlFor={ids.line}>
+                  <Select id={ids.line} value={line} onChange={(e) => setLine(e.target.value)} data-testid="feedback-filter-line">
+                    <option value="">{f.all}</option>
+                    {lineNames.map((n) => (
+                      <option key={n} value={n}>
+                        {n}
                       </option>
                     ))}
                   </Select>
@@ -153,6 +168,7 @@ function FeedbackCard({ row, universityId }: { row: FeedbackRow; universityId: s
           <span className="num text-xs text-muted">{formatDateTime(row.created_at)}</span>
         </span>
       </div>
+      <TripLine row={row} />
       <p className="whitespace-pre-wrap text-sm leading-6">{row.body}</p>
       <FeedbackImages paths={row.image_paths} />
       <div className="grid gap-3 border-t border-border pt-3 sm:grid-cols-[12rem_1fr]">

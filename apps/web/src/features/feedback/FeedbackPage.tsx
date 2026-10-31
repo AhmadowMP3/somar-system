@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { ImagePlus, MessageSquareReply, Send, X } from 'lucide-react';
-import { useEffect, useId, useRef, useState } from 'react';
-import { formatDateTime } from '@somar/shared';
+import { Bus, ImagePlus, MessageSquareReply, Send, X } from 'lucide-react';
+import { useEffect, useId, useMemo, useRef, useState } from 'react';
+import { formatClock, formatDateTime, OUTBOUND_SLOTS, RETURN_SLOTS, servesTrip, type TripDirection } from '@somar/shared';
 import { useAuth } from '@/app/auth';
 import { useToast } from '@/components/ui/overlay';
 import { Button, Card, CardTitle, Field, Textarea } from '@/components/ui/primitives';
@@ -11,7 +11,8 @@ import { api } from '@/lib/api';
 import { errorMessage } from '@/lib/errors';
 import { supabase, unwrap } from '@/lib/supabase';
 import { cn } from '@/lib/utils';
-import { FEEDBACK_COLUMNS, FeedbackImages, KindBadge, StatusBadge, type FeedbackKind, type FeedbackRow } from './common';
+import { useRoutes } from '@/features/student/StudentPages';
+import { FEEDBACK_COLUMNS, FeedbackImages, KindBadge, StatusBadge, TripLine, type FeedbackKind, type FeedbackRow } from './common';
 
 const MAX_IMAGES = 2;
 /** The server's own limit is the photo size in the settings; this only stops an obviously huge file early. */
@@ -31,6 +32,25 @@ export default function FeedbackPage() {
   const [previews, setPreviews] = useState<string[]>([]);
   const [error, setError] = useState<string | null>(null);
   const profileId = me?.profile?.id;
+  // the trip a complaint is about, from the university's registered lines
+  const [direction, setDirection] = useState<TripDirection | ''>('');
+  const [time, setTime] = useState('');
+  const [routeId, setRouteId] = useState('');
+  const routes = useRoutes(me?.student?.university_id ?? me?.profile?.university_id, true);
+  const lines = useMemo(
+    () =>
+      direction && time
+        ? (routes.data ?? []).filter((r) =>
+            servesTrip(
+              { ...r, first_stop_time: r.route_stops.map((s) => s.departure_time).filter(Boolean).sort()[0] ?? null },
+              direction,
+              time,
+            ),
+          )
+        : [],
+    [routes.data, direction, time],
+  );
+  const slots: readonly string[] = direction === 'return' ? RETURN_SLOTS : direction === 'outbound' ? OUTBOUND_SLOTS : [];
 
   useEffect(() => {
     const urls = files.map((file) => URL.createObjectURL(file));
@@ -57,6 +77,11 @@ export default function FeedbackPage() {
       const form = new FormData();
       form.append('kind', kind);
       form.append('body', body.trim());
+      if (kind === 'complaint') {
+        form.append('trip_direction', direction);
+        form.append('trip_time', time);
+        if (routeId) form.append('route_id', routeId);
+      }
       files.forEach((file, i) => form.append(`image${i + 1}`, file));
       return api.post('/feedback', form);
     },
@@ -64,6 +89,9 @@ export default function FeedbackPage() {
       toast.success(kind === 'complaint' ? f.sentComplaint : f.sentNote);
       setBody('');
       setFiles([]);
+      setDirection('');
+      setTime('');
+      setRouteId('');
       setError(null);
       void qc.invalidateQueries({ queryKey: ['my-feedback'] });
     },
@@ -82,6 +110,10 @@ export default function FeedbackPage() {
   };
 
   const submit = () => {
+    if (kind === 'complaint' && (!direction || !time || (lines.length > 0 && !routeId))) {
+      setError(f.tripMissing);
+      return;
+    }
     if (body.trim().length < 3) {
       setError(f.bodyMissing);
       return;
@@ -111,6 +143,65 @@ export default function FeedbackPage() {
             </button>
           ))}
         </div>
+        {kind === 'complaint' ? (
+          <div className="space-y-3 rounded-xl border border-border p-3" data-testid="feedback-trip-picker">
+            <p className="text-sm font-bold">{f.tripTitle}</p>
+            <ChoiceRow
+              label={f.direction}
+              options={(['outbound', 'return'] as const).map((d) => ({ value: d, label: f.directions[d] ?? d }))}
+              value={direction}
+              onChange={(d) => {
+                setDirection(d as TripDirection);
+                setTime('');
+                setRouteId('');
+                setError(null);
+              }}
+              testId="feedback-direction"
+            />
+            {direction ? (
+              <ChoiceRow
+                label={f.time}
+                options={slots.map((s) => ({ value: s, label: formatClock(s) }))}
+                value={time}
+                onChange={(s) => {
+                  setTime(s);
+                  setRouteId('');
+                  setError(null);
+                }}
+                testId="feedback-time"
+                numeric
+              />
+            ) : null}
+            {direction && time ? (
+              lines.length ? (
+                <div role="radiogroup" aria-label={f.line} className="space-y-1" data-testid="feedback-lines">
+                  <p className="text-xs text-muted">{f.line}</p>
+                  {lines.map((r) => (
+                    <button
+                      key={r.id}
+                      type="button"
+                      role="radio"
+                      aria-checked={routeId === r.id}
+                      onClick={() => {
+                        setRouteId(r.id);
+                        setError(null);
+                      }}
+                      className={cn(
+                        'flex min-h-touch w-full items-center gap-2 rounded-lg border px-3 text-start font-semibold',
+                        routeId === r.id ? 'border-brand-ink bg-brand-ink text-on-ink' : 'border-border bg-bg',
+                      )}
+                    >
+                      <Bus className="h-4 w-4 shrink-0" aria-hidden />
+                      {r.name}
+                    </button>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-sm text-muted">{routes.isLoading ? f.linesLoading : f.noLines}</p>
+              )
+            ) : null}
+          </div>
+        ) : null}
         <Field label={kind === 'complaint' ? f.bodyComplaint : f.bodyNote} htmlFor={bodyId}>
           <Textarea
             id={bodyId}
@@ -189,6 +280,7 @@ export default function FeedbackPage() {
                     </span>
                     <span className="num text-xs text-muted">{formatDateTime(row.created_at)}</span>
                   </div>
+                  <TripLine row={row} />
                   <p className="whitespace-pre-wrap text-sm leading-6">{row.body}</p>
                   <FeedbackImages paths={row.image_paths} />
                   {row.reply ? (
@@ -206,6 +298,47 @@ export default function FeedbackPage() {
           </ul>
         )}
       </QueryState>
+    </div>
+  );
+}
+
+/** A row of radio buttons (direction, time). */
+function ChoiceRow({
+  label,
+  options,
+  value,
+  onChange,
+  testId,
+  numeric = false,
+}: {
+  label: string;
+  options: { value: string; label: string }[];
+  value: string;
+  onChange: (value: string) => void;
+  testId: string;
+  numeric?: boolean;
+}) {
+  return (
+    <div className="space-y-1">
+      <p className="text-xs text-muted">{label}</p>
+      <div role="radiogroup" aria-label={label} className="flex flex-wrap gap-2" data-testid={testId}>
+        {options.map((o) => (
+          <button
+            key={o.value}
+            type="button"
+            role="radio"
+            aria-checked={value === o.value}
+            onClick={() => onChange(o.value)}
+            className={cn(
+              'min-h-touch rounded-lg border px-4 font-bold',
+              numeric && 'num',
+              value === o.value ? 'border-brand-ink bg-brand-ink text-on-ink' : 'border-border bg-bg',
+            )}
+          >
+            {o.label}
+          </button>
+        ))}
+      </div>
     </div>
   );
 }
