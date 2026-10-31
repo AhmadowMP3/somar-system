@@ -17,6 +17,7 @@ import {
   MapPin,
   MapPinned,
   Menu,
+  MessageSquareWarning,
   Package,
   QrCode,
   Route,
@@ -121,6 +122,7 @@ export function ScanLayout() {
     : [
         { to: '/scan', label: t.nav.scanShort, icon: ScanLine },
         ...(isStaff ? [{ to: '/admin', label: t.nav.admin, icon: LayoutDashboard }] : []),
+        { to: '/feedback', label: t.nav.feedbackShort, icon: MessageSquareWarning },
         { to: '/password', label: t.nav.password, icon: User },
       ];
   return (
@@ -172,6 +174,7 @@ export const ADMIN_NAV: (NavItem & { perm?: Permission; adminOnly?: boolean; sec
   { section: 'field', to: '/scan', label: t.nav.scan, icon: ScanLine, perm: 'scan' },
   { section: 'field', to: '/admin/scans', label: t.nav.scans, icon: QrCode, perm: 'scans' },
   { section: 'comms', to: '/admin/notifications', label: t.nav.adminNotifications, icon: Bell, perm: 'notifications' },
+  { section: 'comms', to: '/admin/feedback', label: t.nav.adminFeedback, icon: MessageSquareWarning, perm: 'feedback' },
   { section: 'setup', to: '/admin/universities', label: t.nav.universities, icon: Building2, adminOnly: true },
   { section: 'setup', to: '/admin/colleges', label: t.nav.colleges, icon: GraduationCap, perm: 'org' },
   { section: 'setup', to: '/admin/areas', label: t.nav.areas, icon: MapPin, perm: 'org' },

@@ -22,6 +22,25 @@ export async function readMultipart(
   return { fields, file };
 }
 
+/** Read a multipart body into memory: all fields plus up to `maxFiles` files (the global limit is one). */
+export async function readMultipartFiles(
+  request: FastifyRequest,
+  maxFiles: number,
+): Promise<{ fields: Record<string, string>; files: UploadedFile[] }> {
+  if (!request.isMultipart()) throw new ApiError(400, 'FILE_REQUIRED');
+  const fields: Record<string, string> = {};
+  const files: UploadedFile[] = [];
+  for await (const part of request.parts({ limits: { files: maxFiles } })) {
+    if (part.type === 'file') {
+      const buffer = await part.toBuffer();
+      if (buffer.length) files.push({ buffer, filename: part.filename, mimetype: part.mimetype });
+    } else {
+      fields[part.fieldname] = String(part.value ?? '');
+    }
+  }
+  return { fields, files };
+}
+
 const rowSelectionSchema = z.array(z.number().int().min(1)).max(20_000);
 
 /** The «rows» field of an import: a JSON array of the sheet row numbers to import, or absent for all. */

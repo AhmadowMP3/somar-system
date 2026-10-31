@@ -21,6 +21,24 @@ export async function processStudentPhoto(buffer: Buffer, mimetype: string, maxM
   }
 }
 
+/** A photo attached to a note or complaint: EXIF stripped, at most 1600 px on its long side, JPEG q80. */
+export async function processFeedbackImage(buffer: Buffer, mimetype: string, maxMb: number): Promise<Buffer> {
+  if (!PHOTO_MIME_TYPES.includes(mimetype)) throw new ApiError(415, 'PHOTO_TYPE');
+  if (buffer.length > maxMb * 1024 * 1024) throw new ApiError(413, 'PHOTO_SIZE');
+  try {
+    const meta = await sharp(buffer).metadata();
+    if (!meta.format || !['jpeg', 'png', 'webp'].includes(meta.format)) throw new ApiError(415, 'PHOTO_TYPE');
+    return await sharp(buffer)
+      .rotate()
+      .resize(1600, 1600, { fit: 'inside', withoutEnlargement: true })
+      .jpeg({ quality: 80, mozjpeg: true })
+      .toBuffer();
+  } catch (err) {
+    if (err instanceof ApiError) throw err;
+    throw new ApiError(400, 'PHOTO_INVALID');
+  }
+}
+
 export async function processLogo(buffer: Buffer): Promise<Buffer> {
   try {
     return await sharp(buffer)

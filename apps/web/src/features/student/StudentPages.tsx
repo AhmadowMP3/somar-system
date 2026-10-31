@@ -11,6 +11,7 @@ import {
   LogOut,
   Map as MapIcon,
   MapPinned,
+  MessageSquareWarning,
   Navigation,
   Package as PackageIcon,
   ScanLine,
@@ -129,6 +130,21 @@ export function StudentHome() {
           </Card>
 
           <PickupHomeCard />
+
+          <Link
+            to="/feedback"
+            className="flex min-h-touch items-center justify-between gap-3 rounded-xl border border-border bg-bg p-4"
+            data-testid="feedback-home"
+          >
+            <span className="flex items-center gap-3">
+              <MessageSquareWarning className="h-6 w-6 shrink-0 text-brand-ink" aria-hidden />
+              <span>
+                <span className="block font-bold">{t.nav.feedback}</span>
+                <span className="block text-sm text-muted">{t.feedback.homeHint}</span>
+              </span>
+            </span>
+            <ChevronLeft className="h-5 w-5 shrink-0 text-muted" aria-hidden />
+          </Link>
 
           <Card>
             {d.student.kind && d.student.kind !== 'student' ? (
@@ -800,6 +816,12 @@ export function AccountPage() {
                 <Link to="/password">
                   <KeyRound className="h-5 w-5" aria-hidden />
                   {t.nav.password}
+                </Link>
+              </Button>
+              <Button asChild size="lg">
+                <Link to="/feedback" data-testid="account-feedback">
+                  <MessageSquareWarning className="h-5 w-5" aria-hidden />
+                  {t.nav.feedback}
                 </Link>
               </Button>
               <Button

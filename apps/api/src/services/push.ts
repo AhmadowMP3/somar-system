@@ -22,6 +22,9 @@ export type PushService = {
 export type PushPayload = { title: string; body: string; url: string; tag?: string };
 
 function urlFor(n: PendingNotification): string {
+  // notes and complaints open their own pages
+  if (n.type === 'FEEDBACK_REPLY') return '/feedback';
+  if (n.type === 'FEEDBACK') return '/admin/feedback';
   if (n.student_id) return '/notifications';
   return '/admin/notifications';
 }

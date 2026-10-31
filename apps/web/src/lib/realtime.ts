@@ -29,6 +29,7 @@ const TABLE_QUERIES: Record<string, string[]> = {
   student_schedule: ['student-schedule', 'schedule-stats', 'setup-progress', 'my-setup', 'attendance-by-college'],
   audit_log: ['audit', 'audit-actors'],
   pickup_patients: ['my-patients', 'pickup-passengers', 'pickup-days'],
+  feedback: ['feedback', 'my-feedback'],
   buses: ['buses', 'bus-stats', 'scan-buses'],
 };
 

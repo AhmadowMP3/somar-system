@@ -18,6 +18,7 @@ export const PERMISSION_KEYS = [
   'supervisors',
   'settings',
   'audit',
+  'feedback',
 ] as const;
 
 export type Permission = (typeof PERMISSION_KEYS)[number];

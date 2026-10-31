@@ -6,6 +6,7 @@ import type { Config } from './config.js';
 import { makeAuthGuard, type AppContext } from './lib/auth.js';
 import { ApiError } from './lib/errors.js';
 import { createAdminClient } from './lib/supabase.js';
+import { feedbackRoutes } from './routes/feedback.js';
 import { meRoutes } from './routes/me.js';
 import { memberRoutes } from './routes/members.js';
 import { probeRoutes } from './routes/probe.js';
@@ -78,6 +79,7 @@ export async function buildApp(cfg: Config, opts: { logger?: boolean } = {}): Pr
     await scanRoutes(scope, ctx);
     await notificationRoutes(scope, { ...ctx, push });
     await mapRoutes(scope, ctx);
+    await feedbackRoutes(scope, ctx);
   });
   await probeRoutes(app, cfg);
   await staticRoutes(app, cfg);

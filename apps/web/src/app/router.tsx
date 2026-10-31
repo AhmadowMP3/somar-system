@@ -43,9 +43,11 @@ const Admin = {
   Notifications: lazy(() => import('@/features/admin/NotificationsPage')),
   Settings: lazy(() => import('@/features/admin/SettingsPage')),
   Audit: lazy(() => import('@/features/admin/AuditPage')),
+  Feedback: lazy(() => import('@/features/admin/FeedbackPage')),
 };
 const CardsPrintPage = lazy(() => import('@/features/cards/CardsPrintPage'));
 const RosterPrintPage = lazy(() => import('@/features/cards/RosterPrintPage'));
+const FeedbackPage = lazy(() => import('@/features/feedback/FeedbackPage'));
 const RoutesPrintPage = lazy(() => import('@/features/cards/RoutesPrintPage'));
 
 function Page({ children }: { children: ReactNode }) {
@@ -124,6 +126,12 @@ function Allowed({ perm, adminOnly, children }: { perm?: Permission; adminOnly?:
   return first ? <Navigate to={first.to} replace /> : <NotFound />;
 }
 
+/** Notes and complaints: riders in their own shell, supervisors without a rider account in the scanner shell. */
+function SenderLayout() {
+  const { me } = useAuth();
+  return me?.student ? <StudentLayout /> : <ScanLayout />;
+}
+
 function HomeRedirect() {
   const { me } = useAuth();
   const role = me?.profile?.role;
@@ -176,6 +184,10 @@ export const router = createBrowserRouter([
         children: [{ path: '/', element: <HomeRedirect /> }],
       },
       {
+        element: <RequireRole roles={['supervisor', 'university_supervisor']} student />,
+        children: [{ element: <SenderLayout />, children: [{ path: '/feedback', element: <Page><FeedbackPage /></Page> }] }],
+      },
+      {
         element: <RequireRole roles={SCANNERS} perm="scan" />,
         children: [{ element: <ScanLayout />, children: [{ path: '/scan', element: <Page><ScanPage /></Page> }] }],
       },
@@ -219,6 +231,7 @@ export const router = createBrowserRouter([
               { path: 'notifications', element: <Allowed perm="notifications"><Admin.Notifications /></Allowed> },
               { path: 'settings', element: <Allowed perm="settings"><Admin.Settings /></Allowed> },
               { path: 'audit', element: <Allowed perm="audit"><Admin.Audit /></Allowed> },
+              { path: 'feedback', element: <Allowed perm="feedback"><Admin.Feedback /></Allowed> },
             ],
           },
         ],
