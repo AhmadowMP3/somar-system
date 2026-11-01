@@ -98,6 +98,19 @@ describe('notes and complaints', () => {
     expect(notes).toEqual([{ type: 'FEEDBACK', student_id: null, title: expect.stringContaining('شكوى جديدة') }]);
   });
 
+  it('the notification about a new submission is for the admin only', async () => {
+    const admin = (await createStaff(fx, 'admin')).client;
+    const feedbackNotes = async (client: SupabaseClient) =>
+      ((await client.from('notifications').select('id').eq('university_id', fx.universityId).eq('type', 'FEEDBACK')).data ?? []).length;
+    expect(await feedbackNotes(admin)).toBe(1);
+    expect((await admin.rpc('unread_notifications_count')).data).toBeGreaterThanOrEqual(1);
+    // a supervisor with every staff page, a limited one, and riders see nothing of it, in the list or the bell
+    for (const client of [staffAll, staffNoFeedback, student.client, rider2]) {
+      expect(await feedbackNotes(client)).toBe(0);
+      expect((await client.rpc('unread_notifications_count')).data).toBe(0);
+    }
+  });
+
   it('a complaint must name a system time and one of the lines of that trip', async () => {
     const complaint = (extra: Record<string, string>) => send(student.token, { kind: 'complaint', body: 'شكوى', ...extra });
     expect((await complaint({})).statusCode).toBe(400);

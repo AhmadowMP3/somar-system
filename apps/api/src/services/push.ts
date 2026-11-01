@@ -21,6 +21,12 @@ export type PushService = {
 
 export type PushPayload = { title: string; body: string; url: string; tag?: string };
 
+/** Who receives a notification addressed to no one rider: the staff, except new notes and complaints (admin only). */
+export function staffRecipientsFilter(n: Pick<PendingNotification, 'type' | 'university_id'>): string {
+  if (n.type === 'FEEDBACK') return 'role.eq.admin';
+  return `role.eq.admin,and(role.eq.university_supervisor,university_id.eq.${n.university_id})`;
+}
+
 function urlFor(n: PendingNotification): string {
   // notes and complaints open their own pages
   if (n.type === 'FEEDBACK_REPLY') return '/feedback';
@@ -78,7 +84,7 @@ export function createPushService(cfg: Config, db: Db, log: (msg: string) => voi
       .from('profiles')
       .select('id, role, university_id')
       .eq('is_active', true)
-      .or(`role.eq.admin,and(role.eq.university_supervisor,university_id.eq.${n.university_id})`);
+      .or(staffRecipientsFilter(n));
     return (data ?? []).map((p) => p.id as string);
   }
 
