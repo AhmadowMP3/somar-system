@@ -189,3 +189,14 @@ describe('servesTrip', () => {
     expect(servesTrip(line('outbound', '07:00:00'), 'return', '14:00')).toBe(false);
   });
 });
+
+describe('cleanPhoneInput', () => {
+  it('keeps the digits of a typed or pasted phone number', async () => {
+    const { cleanPhoneInput } = await import('../src/text.js');
+    expect(cleanPhoneInput('0983011995')).toBe('0983011995');
+    expect(cleanPhoneInput('\u202a0983011995\u202c')).toBe('0983011995');
+    expect(cleanPhoneInput('\u200e+963 983-011 995\u200f')).toBe('+963983011995');
+    expect(cleanPhoneInput('\u0660\u0669\u0668\u0663 (011) 995')).toBe('0983011995');
+    expect(cleanPhoneInput('abc')).toBe('abc');
+  });
+});

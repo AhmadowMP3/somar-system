@@ -9,6 +9,14 @@ export function stripFormatChars(value: string): string {
   return value.replace(CF_REGEX, '');
 }
 
+/**
+ * A phone number as typed or pasted, ready to check: Arabic digits become Western, and spaces, separators and
+ * the invisible direction marks that WhatsApp and contacts add when a number is copied are removed.
+ */
+export function cleanPhoneInput(value: string): string {
+  return stripFormatChars(normalizeDigits(value)).replace(/[\s\-().]/g, '');
+}
+
 /** Trim, collapse whitespace, strip Cf characters. */
 export function normalizeText(value: unknown): string {
   if (value === null || value === undefined) return '';

@@ -2,7 +2,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Bus, ChevronLeft, Clock, Lock, MapPinned, Pencil, Search, UserRound } from 'lucide-react';
 import { useId, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { foldArabic, formatClock, formatDate, normalizeDigits, OUTBOUND_SLOTS } from '@somar/shared';
+import { cleanPhoneInput, foldArabic, formatClock, formatDate, normalizeDigits, OUTBOUND_SLOTS, stripFormatChars } from '@somar/shared';
 import { useAuth } from '@/app/auth';
 import { ConfirmDialog, useToast } from '@/components/ui/overlay';
 import { Button, Card, CardTitle, Field, Input, Select } from '@/components/ui/primitives';
@@ -62,10 +62,13 @@ type PatientRow = {
 
 const MAX_PATIENTS = 5;
 const emptyPatient = (): PatientDraft => ({ full_name: '', phone: '', outbound_time: '', option: '' });
-/** Arabic phone keyboards type ٠٩٤٤…: the number is kept in Western digits. */
-const cleanPhone = (phone: string) => normalizeDigits(phone).replace(/[\s\-().]/g, '');
-const patientComplete = (x: PatientDraft) =>
-  x.full_name.trim().length >= 2 && /^\+?[0-9]{7,15}$/.test(cleanPhone(x.phone)) && Boolean(x.outbound_time && x.option);
+/** What is wrong with a patient's seat, naming the field; null when it can be sent. */
+function patientProblem(x: PatientDraft, n: number, hasOption: boolean): string | null {
+  if (x.full_name.trim().length < 2) return t.pickup.patientNameMissing(n);
+  if (!/^\+?[0-9]{7,15}$/.test(cleanPhoneInput(x.phone))) return t.pickup.patientPhoneInvalid(n);
+  if (!x.outbound_time || !x.option || !hasOption) return t.pickup.patientTripMissing(n);
+  return null;
+}
 
 /** An option is picked by line and stop together: the same stop can be on two lines of one trip. */
 const optionKey = (o: Pick<Option, 'route_id' | 'stop_id'>) => `${o.route_id}|${o.stop_id}`;
@@ -431,7 +434,7 @@ function PatientForm({
             dir="ltr"
             className="text-start"
             value={value.phone}
-            onChange={(e) => set({ phone: normalizeDigits(e.target.value) })}
+            onChange={(e) => set({ phone: stripFormatChars(normalizeDigits(e.target.value)) })}
             data-testid={`pickup-patient-${n}-phone`}
           />
         </Field>
@@ -508,7 +511,7 @@ export function PickupPage() {
           p_stop_id: chosen?.stop_id,
           p_patients: sentPatients.map((x) => ({
             full_name: x.full_name.trim(),
-            phone: cleanPhone(x.phone),
+            phone: cleanPhoneInput(x.phone),
             outbound_time: x.outbound_time,
             ...splitKey(x.option),
           })),
@@ -555,9 +558,9 @@ export function PickupPage() {
       setError(p.missing);
       return;
     }
-    const incomplete = sentPatients.findIndex((x) => !patientComplete(x) || !optionOf(x.outbound_time, x.option));
-    if (incomplete >= 0) {
-      setError(p.patientsMissing(incomplete + 1));
+    const problem = sentPatients.map((x, i) => patientProblem(x, i + 1, Boolean(optionOf(x.outbound_time, x.option)))).find(Boolean);
+    if (problem) {
+      setError(problem);
       return;
     }
     setError(null);
@@ -599,6 +602,7 @@ export function PickupPage() {
               onChange={(next) => {
                 setSlot(next);
                 setOption('');
+                setError(null);
               }}
               label={p.outboundTime}
               testId="pickup-outbound-times"
@@ -611,7 +615,10 @@ export function PickupPage() {
               {options.isLoading ? (
                 <ListSkeleton rows={2} />
               ) : (
-                <LinePicker options={slotOptions} value={optionKeyValue} onChange={setOption} label={p.outboundStop} testId="pickup-stop" />
+                <LinePicker options={slotOptions} value={optionKeyValue} onChange={(key) => {
+                    setOption(key);
+                    setError(null);
+                  }} label={p.outboundStop} testId="pickup-stop" />
               )}
               <ArrivalNote booking={optionBooking(slot, chosen)} testId="pickup-arrival" />
             </div>
@@ -623,7 +630,10 @@ export function PickupPage() {
                   type="checkbox"
                   className="h-6 w-6 accent-brand-ink"
                   checked={withPatients}
-                  onChange={(e) => setWithPatients(e.target.checked)}
+                  onChange={(e) => {
+                    setWithPatients(e.target.checked);
+                    setError(null);
+                  }}
                   data-testid="pickup-has-patients"
                 />
                 {p.hasPatients}
@@ -637,6 +647,7 @@ export function PickupPage() {
                       onChange={(e) => {
                         const n = Number(e.target.value);
                         setPatients((list) => Array.from({ length: n }, (_, i) => list[i] ?? emptyPatient()));
+                        setError(null);
                       }}
                       data-testid="pickup-patients-count"
                     >
@@ -653,7 +664,10 @@ export function PickupPage() {
                       index={i}
                       value={x}
                       options={all}
-                      onChange={(next) => setPatients((list) => list.map((old, j) => (j === i ? next : old)))}
+                      onChange={(next) => {
+                        setPatients((list) => list.map((old, j) => (j === i ? next : old)));
+                        setError(null);
+                      }}
                     />
                   ))}
                 </>
@@ -704,7 +718,7 @@ export function PickupPage() {
             patients={sentPatients.map((x, i) => ({
               seq: i + 1,
               full_name: x.full_name.trim(),
-              phone: cleanPhone(x.phone),
+              phone: cleanPhoneInput(x.phone),
               ...optionBooking(x.outbound_time, optionOf(x.outbound_time, x.option)),
             }))}
             testId="pickup-confirm-patients"

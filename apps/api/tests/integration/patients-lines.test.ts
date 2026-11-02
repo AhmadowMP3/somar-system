@@ -114,6 +114,13 @@ describe('bookings by line', () => {
     expect(data).toEqual([{ phone: '0944123456' }]);
   });
 
+  it('accepts a phone copied with invisible direction marks and stores it clean', async () => {
+    expect((await book(dentist, [patient({ phone: '\u202a\u200e0944 123-456\u202c' })], lines.line2)).error).toBeNull();
+    const { data } = await dentist.from('pickup_patients').select('phone');
+    expect(data).toEqual([{ phone: '0944123456' }]);
+    expect((await book(dentist, [patient({ phone: '\u202aabc\u202c' })], lines.line2)).error?.message).toBe('PATIENT_PHONE_INVALID');
+  });
+
   it('a changed booking replaces the patients as a whole', async () => {
     expect((await book(dentist, [patient({ full_name: 'مريض بديل' })], lines.line2)).error).toBeNull();
     const { data } = await dentist.from('pickup_patients').select('seq, full_name');
