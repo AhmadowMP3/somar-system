@@ -72,11 +72,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const uid = session?.user.id;
 
-  // live updates for everything this user can see, for as long as they are signed in
-  useEffect(() => {
-    if (!uid) return;
-    return startRealtimeSync(qc);
-  }, [uid, qc]);
 
   const meQuery = useQuery({
     queryKey: ['me', uid],
@@ -99,6 +94,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       return { profile, student };
     },
   });
+
+  // live updates for what this user's screens show (see listensFor), for as long as they are signed in
+  const liveRole = meQuery.data?.profile?.role;
+  const liveStudent = meQuery.data?.student?.id ?? null;
+  const liveUniversity = meQuery.data?.student?.university_id ?? meQuery.data?.profile?.university_id ?? null;
+  useEffect(() => {
+    if (!uid || !liveRole) return;
+    return startRealtimeSync(qc, { role: liveRole, profileId: uid, studentId: liveStudent, universityId: liveUniversity });
+  }, [uid, qc, liveRole, liveStudent, liveUniversity]);
 
   const signIn = useCallback(async (code: string, password: string) => {
     const { error } = await supabase.auth.signInWithPassword({

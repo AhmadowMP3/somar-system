@@ -35,12 +35,64 @@ const TABLE_QUERIES: Record<string, string[]> = {
 
 export const REALTIME_TABLES = Object.keys(TABLE_QUERIES);
 
+/** Who is signed in: decides which tables, and which rows of them, the session listens to. */
+export type RealtimeScope = { role: string; profileId: string; studentId: string | null; universityId: string | null };
+type Listen = { table: string; filter?: string };
+
+/** Tables that carry the university, so a university supervisor can listen to their own only. */
+const UNIVERSITY_TABLES = new Set([
+  'colleges', 'areas', 'packages', 'routes', 'stops', 'profiles', 'students', 'scans', 'settings', 'broadcasts',
+  'notifications', 'recurring_notifications', 'pickup_choices', 'pickup_patients', 'feedback', 'buses',
+]);
+
+/**
+ * Every change to a listened table costs the database a permission check for every listener, so listening
+ * is kept to what each screen can show (CPU incident, 2026-11-07): a rider hears only their own rows and
+ * their university's routes, stops and settings; a scanner their own scans and the buses; a university
+ * supervisor their university; the admin everything. Nobody listens to the audit log.
+ */
+export function listensFor(scope: RealtimeScope): Listen[] {
+  const uni = scope.universityId;
+  if (scope.role === 'admin' || scope.role === 'university_supervisor') {
+    return REALTIME_TABLES.filter((table) => table !== 'audit_log').map((table) => {
+      if (table === 'notification_reads') return { table, filter: `profile_id=eq.${scope.profileId}` };
+      if (scope.role === 'admin' || !uni) return { table };
+      if (table === 'universities') return { table, filter: `id=eq.${uni}` };
+      return UNIVERSITY_TABLES.has(table) ? { table, filter: `university_id=eq.${uni}` } : { table };
+    });
+  }
+  const own: Listen[] = [
+    { table: 'profiles', filter: `id=eq.${scope.profileId}` },
+    { table: 'notification_reads', filter: `profile_id=eq.${scope.profileId}` },
+    { table: 'feedback', filter: `author_profile_id=eq.${scope.profileId}` },
+  ];
+  if (uni) {
+    for (const table of ['settings', 'routes', 'stops']) own.push({ table, filter: `university_id=eq.${uni}` });
+    own.push({ table: 'universities', filter: `id=eq.${uni}` });
+  }
+  if (scope.studentId) {
+    const sid = scope.studentId;
+    own.push(
+      { table: 'students', filter: `id=eq.${sid}` },
+      ...['notifications', 'scans', 'subscriptions', 'student_schedule', 'pickup_choices', 'pickup_patients'].map((table) => ({
+        table,
+        filter: `student_id=eq.${sid}`,
+      })),
+    );
+  }
+  if (scope.role === 'supervisor') {
+    own.push({ table: 'scans', filter: `supervisor_id=eq.${scope.profileId}` });
+    if (uni) own.push({ table: 'buses', filter: `university_id=eq.${uni}` });
+  }
+  return own;
+}
+
 /**
  * Keeps every open screen live: subscribes once per signed-in session and, a moment after changes
  * arrive, refetches the affected queries (bursts, like a bulk import, collapse into one refetch).
  * After a dropped connection comes back, everything on screen is refetched to catch missed changes.
  */
-export function startRealtimeSync(qc: QueryClient): () => void {
+export function startRealtimeSync(qc: QueryClient, scope: RealtimeScope): () => void {
   const pending = new Set<string>();
   let timer: ReturnType<typeof setTimeout> | null = null;
   let everSubscribed = false;
@@ -57,8 +109,8 @@ export function startRealtimeSync(qc: QueryClient): () => void {
   };
 
   let channel: RealtimeChannel = supabase.channel('app-sync');
-  for (const table of REALTIME_TABLES) {
-    channel = channel.on('postgres_changes', { event: '*', schema: 'public', table }, () => queue(table));
+  for (const { table, filter } of listensFor(scope)) {
+    channel = channel.on('postgres_changes', { event: '*', schema: 'public', table, ...(filter ? { filter } : {}) }, () => queue(table));
   }
   channel.subscribe((status) => {
     if (status !== 'SUBSCRIBED') return;

@@ -54,7 +54,8 @@ export function useUnreadCount() {
   return useQuery({
     queryKey: ['unread-count'],
     enabled: Boolean(session),
-    refetchInterval: 60_000,
+    // new notifications arrive through realtime; this is only a safety net
+    refetchInterval: 5 * 60_000,
     queryFn: async () => {
       const { data, error } = await supabase.rpc('unread_notifications_count');
       if (error) throw error;
