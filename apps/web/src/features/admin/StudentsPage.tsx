@@ -54,10 +54,10 @@ const ID_PAGE = 1000;
 const PHOTO_URL_SECONDS = 3600;
 const PHOTO_STALE_MS = 45 * 60 * 1000;
 
-/** The list's filters on v_rider_balance — one place for the page query and «select all matching». */
+/** The list's filters on v_rider_list — one place for the page query and «select all matching». */
 function filteredStudents(universityId: string, filters: Filters, lowBalance: number, columns: string, withCount = false) {
   let q = supabase
-    .from('v_rider_balance')
+    .from('v_rider_list')
     .select(columns, withCount ? { count: 'exact' } : undefined)
     .eq('university_id', universityId)
     .eq('kind', 'student');

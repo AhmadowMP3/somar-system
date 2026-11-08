@@ -116,13 +116,14 @@ describe('supervisor page permissions', () => {
 });
 
 describe('realtime publication', () => {
-  it('publishes every app table', async () => {
+  it('publishes the app tables, but not the audit log (migration 0043)', async () => {
     const { rows } = await db().query<{ tablename: string }>(
       `select tablename from pg_publication_tables where pubname = 'supabase_realtime' and schemaname = 'public'`,
     );
     const published = rows.map((r) => r.tablename);
-    for (const table of ['students', 'scans', 'routes', 'route_stops', 'stops', 'notifications', 'pickup_choices', 'profiles', 'audit_log']) {
+    for (const table of ['students', 'scans', 'routes', 'route_stops', 'stops', 'notifications', 'pickup_choices', 'profiles']) {
       expect(published).toContain(table);
     }
+    expect(published).not.toContain('audit_log');
   });
 });

@@ -11,6 +11,8 @@ export function errorMessage(err: unknown): string {
   if (err instanceof DbError) {
     if (err.code === '23505') return t.errors.duplicate ?? '';
     if (err.code === '42501') return t.errors.FORBIDDEN ?? '';
+    // the database cut a request that ran too long (statement timeout)
+    if (err.code === '57014') return t.errors.timeout ?? '';
     return t.errors[err.message] || t.errors.generic || '';
   }
   if (err instanceof TypeError) return t.errors.network ?? '';

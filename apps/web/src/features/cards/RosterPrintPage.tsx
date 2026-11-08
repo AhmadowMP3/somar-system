@@ -143,7 +143,7 @@ type Scope = { universityId: string; kind: RiderKind; ids: string[] | null; coll
 /** Every matching row of v_rider_balance, past the 1000-row API cap. */
 async function fetchRows({ universityId, kind, ids, college, pkg }: Scope): Promise<Row[]> {
   const base = () => {
-    let q = supabase.from('v_rider_balance').select(VIEW_COLUMNS).eq('university_id', universityId).eq('kind', kind);
+    let q = supabase.from('v_rider_list').select(VIEW_COLUMNS).eq('university_id', universityId).eq('kind', kind);
     if (college) q = q.eq('college_id', college);
     if (pkg === 'none') q = q.is('package_id', null);
     else if (pkg) q = q.eq('package_id', pkg);

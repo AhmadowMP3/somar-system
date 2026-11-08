@@ -79,7 +79,7 @@ async function exportSelected(ids: string[]) {
     rows.push(
       ...(unwrap(
         await supabase
-          .from('v_rider_balance')
+          .from('v_rider_list')
           .select(
             'student_id, transport_number, full_name, university_student_no, phone_e164, college_name, package_name, package_id, quota, remaining, area_primary_name, area_other_text, has_photo, is_active',
           )
